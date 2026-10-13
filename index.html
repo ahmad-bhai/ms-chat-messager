@@ -37,7 +37,7 @@ svg{display:block}
 .screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--chat-bg);z-index:50;padding:20px;overflow:auto}
 [data-theme="light"] .screen{background:#fff}
 .auth-card{width:100%;max-width:360px;text-align:center}
-.logo{width:120px;height:120px;border-radius:50%;margin:0 auto 24px;background:linear-gradient(135deg,#37aee2,#1e96c8);display:flex;align-items:center;justify-content:center;padding-right:6px}
+.logo-img{width:120px;height:120px;border-radius:50%;margin:0 auto 24px;object-fit:cover;box-shadow:var(--shadow)}
 .auth-card h1{font-size:28px;font-weight:600;margin-bottom:8px}
 .sub{color:var(--text2);margin-bottom:28px;line-height:1.4}
 .field{position:relative;margin-bottom:16px;text-align:left}
@@ -182,6 +182,9 @@ svg{display:block}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-thumb{background:rgba(127,145,164,.35);border-radius:3px}
 
+
+.media-preview{display:block;max-width:min(70vw,420px);max-height:420px;border-radius:10px;margin:4px 0;object-fit:contain}
+.reaction-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.reaction-chip{background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:2px 7px;font-size:13px}.tool-btn{width:36px;height:40px;border-radius:50%;font-size:22px;flex-shrink:0;color:var(--text2)}.emoji-panel{position:absolute;bottom:68px;left:10px;z-index:10;background:var(--head);border:1px solid var(--border);box-shadow:var(--shadow);border-radius:16px;padding:10px;display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.emoji-panel button{font-size:25px;padding:5px}
 </style>
 </head>
 <body>
@@ -189,8 +192,8 @@ svg{display:block}
 <!-- ================= AUTH ================= -->
 <div id="auth" class="screen">
   <div class="auth-card">
-    <div class="logo"><svg viewBox="0 0 24 24" width="64" height="64"><path fill="#fff" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></div>
-    <h1 id="authTitle">MS Chat</h1>
+    <img src="https://ms-chat-messager.vercel.app/logo.png" alt="Logo" class="logo-img" onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg viewBox=%220 0 24 24%22 width=%2264%22 height=%2264%22 xmlns=%22http://www.w3.org/2000/svg%22><circle cx=%2212%22 cy=%2212%22 r=%2212%22 fill=%22%232b5278%22/><path fill=%22%23fff%22 d=%22M2.01 21L23 12 2.01 3 2 10l15 2-15 2z%22/></svg>'">
+<h1 id="authTitle">MS Chat</h1>
     <p id="authSub" class="sub">Please enter your email to continue.</p>
     <form id="authForm" novalidate>
       <div class="field" id="fEmail"><input type="email" id="email" placeholder=" " autocomplete="email" inputmode="email"><label for="email">Email</label></div>
@@ -233,6 +236,7 @@ svg{display:block}
         <button class="icon-btn" id="cbClose" aria-label="Cancel"></button>
       </div>
       <footer class="composer">
+        <button type="button" class="tool-btn" id="emojiBtn" aria-label="Emoji">☺</button><button type="button" class="tool-btn" id="attachBtn" aria-label="Attach">＋</button><input id="mediaFile" type="file" accept="image/*,video/*,audio/*" class="hidden">
         <textarea id="msgInput" rows="1" placeholder="Message" maxlength="4000"></textarea>
         <button class="send" id="sendBtn" aria-label="Send"></button>
       </footer>
@@ -629,7 +633,7 @@ function renderMessages(scroll, instant) {
       ? `<div class="quote"><b>Deleted message</b><span>—</span></div>`
       : `<div class="quote" data-goto="${esc(m.replyTo.id)}"><b>${m.replyTo.senderId === me.id ? 'You' : esc((activeChat() || { user: { firstName: '' } }).user.firstName)}</b><span>${esc(m.replyTo.text)}</span></div>`) : '';
     const tick = out ? `<span class="tick">${ic(m.read ? 'checks' : 'check', 16)}</span>` : '';
-    html += `<div class="row ${out ? 'out' : 'in'}" data-id="${esc(m.id)}"><div class="bubble">${q}<span class="txt">${fmtText(m.text)}</span><span class="meta">${m.edited ? 'edited ' : ''}${fmtTime(m.time)}${tick}</span></div></div>`;
+    html += `<div class="row ${out ? 'out' : 'in'}" data-id="${esc(m.id)}"><div class="bubble">${q}${m.mediaUrl ? (m.type==='image'||m.type==='gif' ? `<img class="media-preview" src="${esc(m.mediaUrl)}" alt="${m.type}" loading="lazy">` : m.type==='video' ? `<video class="media-preview" controls playsinline src="${esc(m.mediaUrl)}"></video>` : m.type==='audio' ? `<audio controls src="${esc(m.mediaUrl)}"></audio>` : `<a href="${esc(m.mediaUrl)}" download>📎 Download file</a>`) : ''}<span class="txt">${fmtText(m.text||'')}</span>${m.pinned ? '<small>📌 Pinned</small>' : ''}${m.reactions && Object.keys(m.reactions).length ? `<div class="reaction-row">${Object.entries(m.reactions).map(([em,ids])=>`<button class="reaction-chip" data-react="${esc(em)}">${em} ${ids.length}</button>`).join('')}</div>` : ''}<span class="meta">${m.edited ? 'edited ' : ''}${fmtTime(m.time)}${tick}</span></div></div>`;
   }
   area.innerHTML = `<div class="msgs-wrap">${html}</div>`;
   const mine = msgs.length && msgs[msgs.length - 1].senderId === me.id;
@@ -647,7 +651,7 @@ function showCtx(msg, x, y) {
   const own = msg.senderId === me.id;
   ctx.innerHTML =
     `<button data-a="reply">${ic('reply', 20)}Reply</button>` +
-    `<button data-a="copy">${ic('copy', 20)}Copy text</button>` +
+    `<button data-a="copy">${ic('copy', 20)}Copy text</button>` + `<button data-a="pin">${ic('check',20)}Pin / unpin</button>` +
     (own ? `<button data-a="edit">${ic('edit', 20)}Edit</button><button data-a="delete" class="danger">${ic('trash', 20)}Delete</button>` : '');
   ctx.dataset.id = msg.id;
   ctx.classList.remove('hidden');
@@ -661,6 +665,7 @@ ctx.addEventListener('click', async e => {
   const a = b.dataset.a;
   if (a === 'reply') setComposer('reply', m);
   if (a === 'copy') { try { await navigator.clipboard.writeText(m.text); toast('Copied'); } catch (e) { toast('Copy not allowed'); } }
+  if (a === 'pin') { const r=await api('/messages/'+m.id+'/pin',{method:'POST'}); if(r.success){m.pinned=r.pinned;renderMessages(false)}else toast(r.message||'Could not pin'); }
   if (a === 'edit') { setComposer('edit', m); $('#msgInput').value = m.text; resizeInput(); }
   if (a === 'delete') { if (confirm('Delete this message for everyone?')) { const r = await api('/messages/' + m.id, { method: 'DELETE' }); if (!r.success) toast(r.message || 'Failed'); else { msgs = msgs.filter(x => x.id !== m.id); renderMessages(false); loadChats(); } } }
 });
@@ -720,6 +725,27 @@ input.addEventListener('keydown', e => {
 });
 $('#sendBtn').addEventListener('pointerdown', e => e.preventDefault()); // keep keyboard open
 $('#sendBtn').addEventListener('click', sendMessage);
+
+$('#emojiBtn').onclick = () => {
+  let panel = $('#emojiPanel');
+  if (panel) { panel.remove(); return; }
+  panel = document.createElement('div'); panel.id='emojiPanel'; panel.className='emoji-panel';
+  ['😆','😂','🤣','🥰','😍','😘','❤️','💔','👍','👎','🔥','👏','😭','😎','🤝','🙏','🎉','💯','😮','🥹','😉','🤩','🙈','💋'].forEach(em=>{const b=document.createElement('button');b.type='button';b.textContent=em;b.onclick=()=>{input.value+=em;resizeInput();panel.remove();input.focus()};panel.appendChild(b)});
+  $('#chatView').appendChild(panel);
+};
+$('#attachBtn').onclick = () => $('#mediaFile').click();
+$('#mediaFile').onchange = async e => {
+ const f=e.target.files && e.target.files[0]; e.target.value=''; if(!f||!activeId)return;
+ if(f.size>380*1024){toast('File is too large for built-in storage (max 380 KB). Configure object storage for larger media.');return;}
+ const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(f)});
+ const type=f.type.startsWith('image/gif')?'gif':f.type.startsWith('image/')?'image':f.type.startsWith('video/')?'video':f.type.startsWith('audio/')?'audio':'file';
+ const r=await api('/messages',{method:'POST',body:{chatId:activeId,text:input.value.trim(),type,mediaUrl:data,mime:f.type}});
+ if(!r.success){toast(r.message||'Upload failed');return;} input.value='';resizeInput();if(r.message.chatId===activeId){msgs.push(r.message);renderMessages(true)}loadChats();
+};
+let lastTap={id:'',time:0};
+$('#messages').addEventListener('dblclick',async e=>{const row=e.target.closest('.row');if(!row)return;const m=msgs.find(x=>x.id===row.dataset.id);if(!m)return;const r=await api('/messages/'+m.id+'/reaction',{method:'POST',body:{emoji:'❤️'}});if(r.success){const i=msgs.findIndex(x=>x.id===m.id);if(i>=0)msgs[i]=r.message;renderMessages(false)}});
+$('#messages').addEventListener('click',async e=>{const chip=e.target.closest('[data-react]');if(chip){e.stopPropagation();const row=chip.closest('.row'),m=msgs.find(x=>x.id===row.dataset.id);if(!m)return;const r=await api('/messages/'+m.id+'/reaction',{method:'POST',body:{emoji:chip.dataset.react}});if(r.success){const i=msgs.findIndex(x=>x.id===m.id);if(i>=0)msgs[i]=r.message;renderMessages(false)}}});
+
 
 async function sendMessage() {
   const text = input.value.trim();
