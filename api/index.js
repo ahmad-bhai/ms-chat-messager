@@ -88,7 +88,7 @@ async function body(req) {
     if (typeof req.body === 'string') { if (!req.body.trim()) return {}; try { return JSON.parse(req.body); } catch (e) { throw E(400, 'Bad JSON'); } }
   }
   const chunks = []; let n = 0;
-  for await (const c of req) { n += c.length; if (n > 4_000_000) throw E(413, 'Payload too large'); chunks.push(c); }
+  for await (const c of req) { n += c.length; if (n > 4_000_000) throw E(413, 'Payload too large. Upload media directly to cloud storage.'); chunks.push(c); }
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch (e) { throw E(400, 'Bad JSON'); }
 }
@@ -126,7 +126,7 @@ async function persistMedia(media) {
   const match = media.data.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/);
   if (!match) throw E(400, 'Unsupported media encoding');
   const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 2.8 * 1024 * 1024) throw E(413, 'Media must be smaller than 2.8 MB per upload');
+  if (buffer.length > 100 * 1024 * 1024) throw E(413, 'Media limit is 100 MB per file.');
   const base = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const bucket = process.env.SUPABASE_BUCKET || 'ms-chat-media';
@@ -139,7 +139,7 @@ async function persistMedia(media) {
     return { name, type, url: base + '/storage/v1/object/public/' + encodeURIComponent(bucket) + '/' + object, size: buffer.length, voice: !!media.voice, duration: Math.max(0, +media.duration || 0) };
   }
   // Without cloud storage, keep only small attachments in Redis to avoid provider limits.
-  if (buffer.length > 250 * 1024) throw E(413, 'Configure Supabase Storage for media over 250 KB');
+  if (buffer.length > 250 * 1024) throw E(413, 'Configure Supabase Storage for files over 250 KB.');
   return { name, type, data: media.data, size: buffer.length, voice: !!media.voice, duration: Math.max(0, +media.duration || 0) };
 }
 
@@ -213,6 +213,47 @@ async function route(req, res) {
     return send(res, 200, { success: true, ver: +r[0] || 0, typing: wantTyping && !!r[1] });
   }
 
+  if (m === 'GET' && p === 'users/by-username') {
+    const username = clean(url.searchParams.get('username'), 40).replace(/^@/, '').toLowerCase();
+    if (!USER_RE.test(username)) throw E(400, 'Invalid username');
+    const id = await cmd('GET', 'n:' + username);
+    const u = id ? pj(await cmd('GET', 'u:' + id)) : null;
+    if (!u) throw E(404, 'User not found');
+    const seen = +(await cmd('GET', 'seen:' + id)) || 0;
+    return send(res, 200, { success: true, user: pubUser(u, seen) });
+  }
+
+  if ((mt = p.match(/^users\/([a-f0-9]+)\/block$/)) && (m === 'GET' || m === 'POST' || m === 'DELETE')) {
+    const targetId = mt[1];
+    if (targetId === me) throw E(400, 'You cannot block yourself');
+    const target = pj(await cmd('GET', 'u:' + targetId));
+    if (!target) throw E(404, 'User not found');
+    if (m === 'GET') return send(res, 200, { success: true, blocked: !!(await cmd('GET', 'blocked:' + me + ':' + targetId)) });
+    if (m === 'POST') await cmd('SET', 'blocked:' + me + ':' + targetId, '1');
+    else await cmd('DEL', 'blocked:' + me + ':' + targetId);
+    return send(res, 200, { success: true, blocked: m === 'POST' });
+  }
+
+  if (m === 'POST' && p === 'media/sign') {
+    const b = await body(req);
+    const name = clean(b.name || 'media', 120).replace(/[^a-z0-9._-]/gi, '_');
+    const type = clean(b.type || 'application/octet-stream', 100);
+    const size = Math.max(0, Number(b.size) || 0);
+    if (!size || size > 100 * 1024 * 1024) throw E(413, 'Choose a file smaller than 100 MB');
+    const base = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const bucket = process.env.SUPABASE_BUCKET || 'ms-chat-media';
+    if (!base || !key) throw E(503, 'Large media needs Supabase Storage. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_BUCKET in Vercel.');
+    const object = me + '/' + Date.now() + '-' + crypto.randomBytes(8).toString('hex') + '-' + name;
+    const signRes = await fetch(base + '/storage/v1/object/upload/sign/' + encodeURIComponent(bucket) + '/' + object, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + key, apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    });
+    let signData = {}; try { signData = await signRes.json(); } catch (_) {}
+    if (!signRes.ok || !signData.url) throw E(502, 'Could not create cloud upload URL. Check Supabase bucket and Storage settings.');
+    const signedUrl = new URL(signData.url, base).toString();
+    const publicUrl = base + '/storage/v1/object/public/' + encodeURIComponent(bucket) + '/' + object.split('/').map(encodeURIComponent).join('/');
+    return send(res, 200, { success: true, signedUrl, publicUrl, name, type, size });
+  }
   if (m === 'GET' && p === 'me') return send(res, 200, { success: true, user: selfUser(await loadUser(me)) });
   if (m === 'POST' && p === 'auth/logout') return send(res, 200, { success: true });
 
@@ -279,6 +320,7 @@ async function route(req, res) {
     const tid = String(b.targetUserId || '');
     const target = ID_RE.test(tid) ? pj(await cmd('GET', 'u:' + tid)) : null;
     if (!target || target.id === me) throw E(400, 'Invalid user');
+    if (await cmd('GET', 'blocked:' + me + ':' + target.id) || await cmd('GET', 'blocked:' + target.id + ':' + me)) throw E(403, 'Messaging is blocked between these users');
     const pk = 'pair:' + [me, target.id].sort().join(':');
     let chat = null;
     const existing = await cmd('GET', pk);
@@ -341,6 +383,8 @@ async function route(req, res) {
   if (m === 'POST' && p === 'messages') {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
+    const peerId = chat.members.find(i => i !== me);
+    if (peerId && (await cmd('GET', 'blocked:' + me + ':' + peerId) || await cmd('GET', 'blocked:' + peerId + ':' + me))) throw E(403, 'Messaging is blocked between these users');
     const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
     if (!text && !b.media) throw E(400, 'Empty message');
     const media = b.media ? await persistMedia(b.media) : null;
