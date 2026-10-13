@@ -88,7 +88,7 @@ async function body(req) {
     if (typeof req.body === 'string') { if (!req.body.trim()) return {}; try { return JSON.parse(req.body); } catch (e) { throw E(400, 'Bad JSON'); } }
   }
   const chunks = []; let n = 0;
-  for await (const c of req) { n += c.length; if (n > 4_000_000) throw E(413, 'Payload too large. Upload media directly to cloud storage.'); chunks.push(c); }
+  for await (const c of req) { n += c.length; if (n > 600000) throw E(413, 'Payload too large'); chunks.push(c); }
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch (e) { throw E(400, 'Bad JSON'); }
 }
@@ -100,7 +100,7 @@ const pubUser = (u, seen) => u ? ({
   id: u.id, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '',
   online: !!seen && Date.now() - seen < ONLINE_MS, lastSeen: seen || 0
 }) : { id: '', firstName: 'Deleted', username: '', bio: '', profilePhoto: '', online: false, lastSeen: 0 };
-const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text || '', time: m.time, edited: !!m.edited, read: (m.readBy || []).length > 0, replyTo: reply || null, media: m.media || null, reactions: m.reactions || {}, pinned: !!m.pinned });
+const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text, time: m.time, edited: !!m.edited, read: m.readBy.length > 0, replyTo: reply || null });
 const replyView = r => r ? { id: r.id, senderId: r.senderId, text: r.text.slice(0, 120) } : null;
 
 async function getChat(id, me) {
@@ -111,37 +111,6 @@ async function getChat(id, me) {
   return c;
 }
 async function loadUser(id) { const u = pj(await cmd('GET', 'u:' + id)); if (!u) throw E(401, 'Not signed in'); return u; }
-
-/* Optional Supabase Storage integration for larger media.
-   Configure SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_BUCKET in Vercel.
-   The bucket must be public for returned public URLs to render in the browser. */
-async function persistMedia(media) {
-  if (!media || typeof media !== 'object') return null;
-  const name = clean(media.name || 'media', 120).replace(/[^a-z0-9._-]/gi, '_');
-  const type = clean(media.type || 'application/octet-stream', 100);
-  if (typeof media.data !== 'string' || !media.data.startsWith('data:')) {
-    if (typeof media.url === 'string' && /^https?:\/\//i.test(media.url)) return { name, type, url: media.url, size: Math.max(0, +media.size || 0), voice: !!media.voice, duration: Math.max(0, +media.duration || 0) };
-    throw E(400, 'Invalid media attachment');
-  }
-  const match = media.data.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/);
-  if (!match) throw E(400, 'Unsupported media encoding');
-  const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 100 * 1024 * 1024) throw E(413, 'Media limit is 100 MB per file.');
-  const base = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const bucket = process.env.SUPABASE_BUCKET || 'ms-chat-media';
-  if (base && key) {
-    const object = Date.now() + '-' + crypto.randomBytes(8).toString('hex') + '-' + name;
-    const response = await fetch(base + '/storage/v1/object/' + encodeURIComponent(bucket) + '/' + object, {
-      method: 'POST', headers: { Authorization: 'Bearer ' + key, apikey: key, 'Content-Type': type, 'x-upsert': 'false' }, body: buffer
-    });
-    if (!response.ok) throw E(502, 'Cloud media upload failed. Check Supabase Storage settings and bucket name.');
-    return { name, type, url: base + '/storage/v1/object/public/' + encodeURIComponent(bucket) + '/' + object, size: buffer.length, voice: !!media.voice, duration: Math.max(0, +media.duration || 0) };
-  }
-  // Without cloud storage, keep only small attachments in Redis to avoid provider limits.
-  if (buffer.length > 250 * 1024) throw E(413, 'Configure Supabase Storage for files over 250 KB.');
-  return { name, type, data: media.data, size: buffer.length, voice: !!media.voice, duration: Math.max(0, +media.duration || 0) };
-}
 
 /* ---------- Router ---------- */
 async function route(req, res) {
@@ -213,47 +182,6 @@ async function route(req, res) {
     return send(res, 200, { success: true, ver: +r[0] || 0, typing: wantTyping && !!r[1] });
   }
 
-  if (m === 'GET' && p === 'users/by-username') {
-    const username = clean(url.searchParams.get('username'), 40).replace(/^@/, '').toLowerCase();
-    if (!USER_RE.test(username)) throw E(400, 'Invalid username');
-    const id = await cmd('GET', 'n:' + username);
-    const u = id ? pj(await cmd('GET', 'u:' + id)) : null;
-    if (!u) throw E(404, 'User not found');
-    const seen = +(await cmd('GET', 'seen:' + id)) || 0;
-    return send(res, 200, { success: true, user: pubUser(u, seen) });
-  }
-
-  if ((mt = p.match(/^users\/([a-f0-9]+)\/block$/)) && (m === 'GET' || m === 'POST' || m === 'DELETE')) {
-    const targetId = mt[1];
-    if (targetId === me) throw E(400, 'You cannot block yourself');
-    const target = pj(await cmd('GET', 'u:' + targetId));
-    if (!target) throw E(404, 'User not found');
-    if (m === 'GET') return send(res, 200, { success: true, blocked: !!(await cmd('GET', 'blocked:' + me + ':' + targetId)) });
-    if (m === 'POST') await cmd('SET', 'blocked:' + me + ':' + targetId, '1');
-    else await cmd('DEL', 'blocked:' + me + ':' + targetId);
-    return send(res, 200, { success: true, blocked: m === 'POST' });
-  }
-
-  if (m === 'POST' && p === 'media/sign') {
-    const b = await body(req);
-    const name = clean(b.name || 'media', 120).replace(/[^a-z0-9._-]/gi, '_');
-    const type = clean(b.type || 'application/octet-stream', 100);
-    const size = Math.max(0, Number(b.size) || 0);
-    if (!size || size > 100 * 1024 * 1024) throw E(413, 'Choose a file smaller than 100 MB');
-    const base = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    const bucket = process.env.SUPABASE_BUCKET || 'ms-chat-media';
-    if (!base || !key) throw E(503, 'Large media needs Supabase Storage. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_BUCKET in Vercel.');
-    const object = me + '/' + Date.now() + '-' + crypto.randomBytes(8).toString('hex') + '-' + name;
-    const signRes = await fetch(base + '/storage/v1/object/upload/sign/' + encodeURIComponent(bucket) + '/' + object, {
-      method: 'POST', headers: { Authorization: 'Bearer ' + key, apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({})
-    });
-    let signData = {}; try { signData = await signRes.json(); } catch (_) {}
-    if (!signRes.ok || !signData.url) throw E(502, 'Could not create cloud upload URL. Check Supabase bucket and Storage settings.');
-    const signedUrl = new URL(signData.url, base).toString();
-    const publicUrl = base + '/storage/v1/object/public/' + encodeURIComponent(bucket) + '/' + object.split('/').map(encodeURIComponent).join('/');
-    return send(res, 200, { success: true, signedUrl, publicUrl, name, type, size });
-  }
   if (m === 'GET' && p === 'me') return send(res, 200, { success: true, user: selfUser(await loadUser(me)) });
   if (m === 'POST' && p === 'auth/logout') return send(res, 200, { success: true });
 
@@ -320,7 +248,6 @@ async function route(req, res) {
     const tid = String(b.targetUserId || '');
     const target = ID_RE.test(tid) ? pj(await cmd('GET', 'u:' + tid)) : null;
     if (!target || target.id === me) throw E(400, 'Invalid user');
-    if (await cmd('GET', 'blocked:' + me + ':' + target.id) || await cmd('GET', 'blocked:' + target.id + ':' + me)) throw E(403, 'Messaging is blocked between these users');
     const pk = 'pair:' + [me, target.id].sort().join(':');
     let chat = null;
     const existing = await cmd('GET', pk);
@@ -383,19 +310,16 @@ async function route(req, res) {
   if (m === 'POST' && p === 'messages') {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
-    const peerId = chat.members.find(i => i !== me);
-    if (peerId && (await cmd('GET', 'blocked:' + me + ':' + peerId) || await cmd('GET', 'blocked:' + peerId + ':' + me))) throw E(403, 'Messaging is blocked between these users');
     const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
-    if (!text && !b.media) throw E(400, 'Empty message');
-    const media = b.media ? await persistMedia(b.media) : null;
+    if (!text) throw E(400, 'Empty message');
     let replyTo = null, replyMsg = null;
     if (b.replyTo && ID_RE.test(String(b.replyTo))) {
       const r = pj(await cmd('GET', 'm:' + b.replyTo));
       if (r && r.chatId === chat.id) { replyTo = r.id; replyMsg = r; }
     }
     const other = chat.members.find(i => i !== me);
-    const msg = { id: uid(), chatId: chat.id, senderId: me, text, media, reactions: {}, pinned: false, time: Date.now(), edited: false, replyTo, readBy: [] };
-    const last = { id: msg.id, chatId: chat.id, senderId: me, text: (text || (media ? (media.voice ? '🎙 Voice message' : media.type.startsWith('image/') ? '📷 Photo' : media.type.startsWith('video/') ? '🎥 Video' : media.type.startsWith('audio/') ? '🎵 Audio' : '📎 Attachment') : '')).slice(0, 200), time: msg.time };
+    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [] };
+    const last = { id: msg.id, chatId: chat.id, senderId: me, text: text.slice(0, 200), time: msg.time };
     await pipe([
       ['SET', 'm:' + msg.id, JSON.stringify(msg)], ['ZADD', 'cm:' + chat.id, msg.time, msg.id],
       ['SET', 'last:' + chat.id, JSON.stringify(last)], ['INCR', 'unread:' + other + ':' + chat.id],
@@ -405,56 +329,9 @@ async function route(req, res) {
     return send(res, 200, { success: true, message: msgView(msg, replyView(replyMsg)) });
   }
 
-  if ((mt = p.match(/^messages\/([a-f0-9]+)\/reactions$/)) && m === 'POST') {
-    const msg = pj(await cmd('GET', 'm:' + mt[1]));
-    if (!msg) throw E(404, 'Message not found');
-    const chat = await getChat(msg.chatId, me);
-    const b = await body(req), emoji = clean(b.emoji, 16);
-    if (!emoji || !/\p{Extended_Pictographic}/u.test(emoji)) throw E(400, 'Choose an emoji reaction');
-    msg.reactions = msg.reactions && typeof msg.reactions === 'object' ? msg.reactions : {};
-    const users = Array.isArray(msg.reactions[emoji]) ? msg.reactions[emoji] : [];
-    if (users.includes(me)) { msg.reactions[emoji] = users.filter(x => x !== me); if (!msg.reactions[emoji].length) delete msg.reactions[emoji]; }
-    else { msg.reactions[emoji] = [...users, me].slice(0, chat.members.length); }
-    await pipe([['SET', 'm:' + msg.id, JSON.stringify(msg)], ...chat.members.filter(x => x !== me).map(x => ['INCR', 'ver:' + x])]);
-    const rm = msg.replyTo ? pj(await cmd('GET', 'm:' + msg.replyTo)) : null;
-    return send(res, 200, { success: true, message: msgView(msg, msg.replyTo ? (rm ? replyView(rm) : { id: msg.replyTo, deleted: true }) : null) });
-  }
-
-  if ((mt = p.match(/^messages\/([a-f0-9]+)\/pin$/)) && m === 'POST') {
-    const msg = pj(await cmd('GET', 'm:' + mt[1]));
-    if (!msg) throw E(404, 'Message not found');
-    const chat = await getChat(msg.chatId, me);
-    msg.pinned = !msg.pinned;
-    await pipe([['SET', 'm:' + msg.id, JSON.stringify(msg)], ...chat.members.filter(x => x !== me).map(x => ['INCR', 'ver:' + x])]);
-    const rm = msg.replyTo ? pj(await cmd('GET', 'm:' + msg.replyTo)) : null;
-    return send(res, 200, { success: true, message: msgView(msg, msg.replyTo ? (rm ? replyView(rm) : { id: msg.replyTo, deleted: true }) : null) });
-  }
-
-  if ((mt = p.match(/^chats\/clear\/([a-f0-9]+)$/)) && m === 'DELETE') {
-    const chat = await getChat(mt[1], me);
-    const ids = await cmd('ZRANGE', 'cm:' + chat.id, 0, -1);
-    const other = chat.members.find(i => i !== me);
-    const cmds = [['DEL', 'cm:' + chat.id], ['DEL', 'last:' + chat.id], ['DEL', 'unread:' + me + ':' + chat.id], ...ids.map(id => ['DEL', 'm:' + id]), ['INCR', 'ver:' + other]];
-    await pipe(cmds);
-    return send(res, 200, { success: true });
-  }
-
-  if ((mt = p.match(/^chats\/delete\/([a-f0-9]+)$/)) && m === 'DELETE') {
-    const chat = await getChat(mt[1], me);
-    await pipe([['SREM', 'uchats:' + me, chat.id], ['SET', 'hiddenchat:' + me + ':' + chat.id, '1'], ['DEL', 'unread:' + me + ':' + chat.id]]);
-    return send(res, 200, { success: true });
-  }
-
-  if ((mt = p.match(/^chats\/([a-f0-9]+)\/mute$/)) && m === 'POST') {
-    const chat = await getChat(mt[1], me);
-    const b = await body(req), muted = !!b.muted;
-    if (muted) await cmd('SET', 'muted:' + me + ':' + chat.id, '1'); else await cmd('DEL', 'muted:' + me + ':' + chat.id);
-    return send(res, 200, { success: true, muted });
-  }
-
   if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && (m === 'PUT' || m === 'DELETE')) {
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
-    if (!msg) throw E(404, 'Message not found');
+    if (!msg || msg.senderId !== me) throw E(404, 'Message not found');
     const chat = await getChat(msg.chatId, me);
     const other = chat.members.find(i => i !== me);
     if (m === 'PUT') {
