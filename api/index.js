@@ -100,7 +100,7 @@ const pubUser = (u, seen) => u ? ({
   id: u.id, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '',
   online: !!seen && Date.now() - seen < ONLINE_MS, lastSeen: seen || 0
 }) : { id: '', firstName: 'Deleted', username: '', bio: '', profilePhoto: '', online: false, lastSeen: 0 };
-const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text, time: m.time, edited: !!m.edited, read: m.readBy.length > 0, replyTo: reply || null });
+const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text || '', type: m.type || 'text', mediaUrl: m.mediaUrl || '', mime: m.mime || '', reactions: m.reactions || {}, pinned: !!m.pinned, time: m.time, edited: !!m.edited, read: m.readBy.length > 0, replyTo: reply || null });
 const replyView = r => r ? { id: r.id, senderId: r.senderId, text: r.text.slice(0, 120) } : null;
 
 async function getChat(id, me) {
@@ -311,15 +311,19 @@ async function route(req, res) {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
     const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
-    if (!text) throw E(400, 'Empty message');
+    const type = ['text','image','video','audio','gif','file'].includes(b.type) ? b.type : 'text';
+    const mediaUrl = typeof b.mediaUrl === 'string' ? b.mediaUrl : '';
+    const mime = clean(b.mime, 100);
+    if (!text && !mediaUrl) throw E(400, 'Empty message');
+    if (mediaUrl && (!mediaUrl.startsWith('data:') || mediaUrl.length > 520000)) throw E(413, 'Media must be a data URL under 380 KB; use external storage for larger files');
     let replyTo = null, replyMsg = null;
     if (b.replyTo && ID_RE.test(String(b.replyTo))) {
       const r = pj(await cmd('GET', 'm:' + b.replyTo));
       if (r && r.chatId === chat.id) { replyTo = r.id; replyMsg = r; }
     }
     const other = chat.members.find(i => i !== me);
-    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [] };
-    const last = { id: msg.id, chatId: chat.id, senderId: me, text: text.slice(0, 200), time: msg.time };
+    const msg = { id: uid(), chatId: chat.id, senderId: me, text, type, mediaUrl, mime, reactions: {}, pinned: false, time: Date.now(), edited: false, replyTo, readBy: [] };
+    const last = { id: msg.id, chatId: chat.id, senderId: me, text: (text || ({image:'📷 Photo',video:'🎬 Video',audio:'🎵 Audio',gif:'GIF',file:'📎 File'}[type] || 'Message')).slice(0, 200), time: msg.time };
     await pipe([
       ['SET', 'm:' + msg.id, JSON.stringify(msg)], ['ZADD', 'cm:' + chat.id, msg.time, msg.id],
       ['SET', 'last:' + chat.id, JSON.stringify(last)], ['INCR', 'unread:' + other + ':' + chat.id],
@@ -331,8 +335,9 @@ async function route(req, res) {
 
   if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && (m === 'PUT' || m === 'DELETE')) {
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
-    if (!msg || msg.senderId !== me) throw E(404, 'Message not found');
+    if (!msg) throw E(404, 'Message not found');
     const chat = await getChat(msg.chatId, me);
+    if (m === 'PUT' && msg.senderId !== me) throw E(403, 'You can only edit your own messages');
     const other = chat.members.find(i => i !== me);
     if (m === 'PUT') {
       const b = await body(req);
@@ -359,6 +364,28 @@ async function route(req, res) {
       ['INCR', 'ver:' + other]
     ]);
     return send(res, 200, { success: true });
+  }
+
+  if ((mt = p.match(/^messages\/([a-f0-9]+)\/reaction$/)) && m === 'POST') {
+    const b = await body(req), msg = pj(await cmd('GET', 'm:' + mt[1]));
+    if (!msg) throw E(404, 'Message not found');
+    const chat = await getChat(msg.chatId, me);
+    const emoji = clean(b.emoji, 12);
+    if (!['😆','❤️','😍','👍','😂','🔥','😢','👏','🤝','🥰','😮'].includes(emoji)) throw E(400, 'Unsupported reaction');
+    msg.reactions = msg.reactions || {};
+    const users = Array.isArray(msg.reactions[emoji]) ? msg.reactions[emoji] : [];
+    msg.reactions[emoji] = users.includes(me) ? users.filter(x => x !== me) : [...users, me];
+    if (!msg.reactions[emoji].length) delete msg.reactions[emoji];
+    await pipe([['SET','m:'+msg.id,JSON.stringify(msg)], ...chat.members.filter(x=>x!==me).map(x=>['INCR','ver:'+x])]);
+    return send(res,200,{success:true,message:msgView(msg,null)});
+  }
+  if ((mt = p.match(/^messages\/([a-f0-9]+)\/pin$/)) && m === 'POST') {
+    const msg = pj(await cmd('GET', 'm:' + mt[1]));
+    if (!msg) throw E(404, 'Message not found');
+    const chat = await getChat(msg.chatId, me);
+    msg.pinned = !msg.pinned;
+    await pipe([['SET','m:'+msg.id,JSON.stringify(msg)], ...chat.members.filter(x=>x!==me).map(x=>['INCR','ver:'+x])]);
+    return send(res,200,{success:true,pinned:msg.pinned});
   }
 
   throw E(404, 'Not found');
