@@ -40,8 +40,15 @@ const ID_RE = /^[a-f0-9]{1,32}$/;
 const validPhoto = p => {
   if (!p) return true;
   if (typeof p !== 'string') return false;
-  if (p.startsWith('data:image/')) return p.length < 60000;
-  return /^https?:\/\//i.test(p) && p.length < 500;
+  if (p.startsWith('data:image/')) return p.length < 200000;
+  return /^https?:\/\//i.test(p) && p.length < 1000;
+};
+const validMedia = m => {
+  if (!m || typeof m !== 'object') return false;
+  if (!m.type || !['image', 'video', 'audio', 'voice', 'gif', 'file'].includes(m.type)) return false;
+  if (!m.url || typeof m.url !== 'string') return false;
+  if (m.url.startsWith('data:')) return m.url.length < 500000;
+  return /^https?:\/\//i.test(m.url) && m.url.length < 2000;
 };
 const scrypt = (pw, salt) => new Promise((ok, no) => crypto.scrypt(pw, salt, 64, (e, k) => e ? no(e) : ok(k.toString('hex'))));
 async function hashSecret(s) { const salt = crypto.randomBytes(16).toString('hex'); return { salt, hash: await scrypt(String(s), salt) }; }
@@ -88,20 +95,24 @@ async function body(req) {
     if (typeof req.body === 'string') { if (!req.body.trim()) return {}; try { return JSON.parse(req.body); } catch (e) { throw E(400, 'Bad JSON'); } }
   }
   const chunks = []; let n = 0;
-  for await (const c of req) { n += c.length; if (n > 600000) throw E(413, 'Payload too large'); chunks.push(c); }
+  for await (const c of req) { n += c.length; if (n > 2000000) throw E(413, 'Payload too large'); chunks.push(c); }
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch (e) { throw E(400, 'Bad JSON'); }
 }
 const clientIp = req => String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'ip';
 
 /* ---------- Views ---------- */
-const selfUser = u => ({ id: u.id, email: u.email, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '', twoStepEnabled: !!u.twoStepEnabled });
+const selfUser = u => ({ id: u.id, email: u.email, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '', twoStepEnabled: !!u.twoStepEnabled, accounts: u.accounts || [] });
 const pubUser = (u, seen) => u ? ({
   id: u.id, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '',
   online: !!seen && Date.now() - seen < ONLINE_MS, lastSeen: seen || 0
 }) : { id: '', firstName: 'Deleted', username: '', bio: '', profilePhoto: '', online: false, lastSeen: 0 };
-const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text, time: m.time, edited: !!m.edited, read: m.readBy.length > 0, replyTo: reply || null });
-const replyView = r => r ? { id: r.id, senderId: r.senderId, text: r.text.slice(0, 120) } : null;
+const msgView = (m, reply) => ({ 
+  id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text, time: m.time, edited: !!m.edited, 
+  read: m.readBy.length > 0, replyTo: reply || null, media: m.media || null, reactions: m.reactions || {},
+  pinned: !!m.pinned, forwarded: !!m.forwarded
+});
+const replyView = r => r ? { id: r.id, senderId: r.senderId, text: r.text.slice(0, 120), media: r.media ? { type: r.media.type } : null } : null;
 
 async function getChat(id, me) {
   id = String(id || '');
@@ -143,7 +154,7 @@ async function route(req, res) {
     const id = uid();
     if (!(await cmd('SET', 'e:' + email, id, 'NX'))) throw E(409, 'Email already registered');
     if (!(await cmd('SET', 'n:' + username.toLowerCase(), id, 'NX'))) { await cmd('DEL', 'e:' + email); throw E(409, 'Username is taken'); }
-    const user = { id, email, firstName, username, bio: '', profilePhoto: '', pass: await hashSecret(password), twoStepEnabled: false, pin: null, createdAt: Date.now() };
+    const user = { id, email, firstName, username, bio: '', profilePhoto: '', pass: await hashSecret(password), twoStepEnabled: false, pin: null, createdAt: Date.now(), accounts: [] };
     await pipe([
       ['SET', 'u:' + id, JSON.stringify(user)], ['SET', 'seen:' + id, Date.now()],
       ['ZADD', 'idx', 0, username.toLowerCase() + '|' + id], ['ZADD', 'idx', 0, firstName.toLowerCase() + '|' + id]
@@ -185,6 +196,7 @@ async function route(req, res) {
   if (m === 'GET' && p === 'me') return send(res, 200, { success: true, user: selfUser(await loadUser(me)) });
   if (m === 'POST' && p === 'auth/logout') return send(res, 200, { success: true });
 
+  /* ----- User update ----- */
   if (m === 'POST' && p === 'user/update') {
     const b = await body(req);
     const user = await loadUser(me);
@@ -216,6 +228,7 @@ async function route(req, res) {
     return send(res, 200, { success: true, user: selfUser(user) });
   }
 
+  /* ----- Search users ----- */
   if (m === 'GET' && p === 'users/search') {
     const q = clean(url.searchParams.get('q'), 40).replace(/^@/, '').toLowerCase();
     if (!q) return send(res, 200, []);
@@ -226,20 +239,100 @@ async function route(req, res) {
     return send(res, 200, ids.map((_, i) => pj(r[i]) && pubUser(pj(r[i]), +r[ids.length + i] || 0)).filter(Boolean));
   }
 
+  /* ----- Contacts ----- */
+  if (m === 'GET' && p === 'contacts') {
+    const ids = await cmd('SMEMBERS', 'contacts:' + me);
+    if (!ids.length) return send(res, 200, []);
+    const r = await pipe([...ids.map(i => ['GET', 'u:' + i]), ...ids.map(i => ['GET', 'seen:' + i]), ...ids.map(i => ['GET', 'contact:' + me + ':' + i])]);
+    return send(res, 200, ids.map((id, i) => {
+      const u = pj(r[i]); if (!u) return null;
+      const custom = pj(r[ids.length * 2 + i]);
+      return { ...pubUser(u, +r[ids.length + i] || 0), customName: custom?.name || '', customPhoto: custom?.photo || '' };
+    }).filter(Boolean));
+  }
+
+  if (m === 'POST' && p === 'contacts/add') {
+    const b = await body(req);
+    const tid = String(b.userId || '');
+    const target = ID_RE.test(tid) ? pj(await cmd('GET', 'u:' + tid)) : null;
+    if (!target || target.id === me) throw E(400, 'Invalid user');
+    const contact = { name: clean(b.name, 40) || target.firstName, photo: b.photo || '' };
+    await pipe([['SADD', 'contacts:' + me, tid], ['SET', 'contact:' + me + ':' + tid, JSON.stringify(contact)]]);
+    return send(res, 200, { success: true });
+  }
+
+  if (m === 'POST' && p === 'contacts/update') {
+    const b = await body(req);
+    const tid = String(b.userId || '');
+    if (!ID_RE.test(tid)) throw E(400, 'Invalid user');
+    const contact = { name: clean(b.name, 40), photo: b.photo || '' };
+    await cmd('SET', 'contact:' + me + ':' + tid, JSON.stringify(contact));
+    return send(res, 200, { success: true });
+  }
+
+  if (m === 'POST' && p === 'contacts/delete') {
+    const b = await body(req);
+    const tid = String(b.userId || '');
+    if (!ID_RE.test(tid)) throw E(400, 'Invalid user');
+    await pipe([['SREM', 'contacts:' + me, tid], ['DEL', 'contact:' + me + ':' + tid]]);
+    return send(res, 200, { success: true });
+  }
+
+  /* ----- Block users ----- */
+  if (m === 'POST' && p === 'users/block') {
+    const b = await body(req);
+    const tid = String(b.userId || '');
+    if (!ID_RE.test(tid) || tid === me) throw E(400, 'Invalid user');
+    await cmd('SADD', 'blocked:' + me, tid);
+    return send(res, 200, { success: true });
+  }
+
+  if (m === 'POST' && p === 'users/unblock') {
+    const b = await body(req);
+    const tid = String(b.userId || '');
+    if (!ID_RE.test(tid)) throw E(400, 'Invalid user');
+    await cmd('SREM', 'blocked:' + me, tid);
+    return send(res, 200, { success: true });
+  }
+
+  if (m === 'GET' && p === 'users/blocked') {
+    const ids = await cmd('SMEMBERS', 'blocked:' + me);
+    return send(res, 200, ids);
+  }
+
+  /* ----- Saved messages ----- */
+  if (m === 'POST' && p === 'saved/init') {
+    const pk = 'saved:' + me;
+    let chat = pj(await cmd('GET', pk));
+    if (!chat) {
+      chat = { id: uid(), members: [me], createdBy: me, createdAt: Date.now(), saved: true };
+      await pipe([['SET', 'chat:' + chat.id, JSON.stringify(chat)], ['SET', pk, chat.id], ['SADD', 'uchats:' + me, chat.id]]);
+    }
+    return send(res, 200, { success: true, chatId: chat.id });
+  }
+
   /* ----- Chats ----- */
   if (m === 'GET' && p === 'chats') {
     const ids = await cmd('SMEMBERS', 'uchats:' + me);
     if (!ids.length) return send(res, 200, []);
-    const r = await pipe(ids.flatMap(id => [['GET', 'chat:' + id], ['GET', 'last:' + id], ['GET', 'unread:' + me + ':' + id]]));
-    const items = ids.map((_, i) => ({ chat: pj(r[i * 3]), last: pj(r[i * 3 + 1]), unread: Math.max(0, +r[i * 3 + 2] || 0) }))
-      .filter(x => x.chat && (x.last || x.chat.createdBy === me));
+    const r = await pipe(ids.flatMap(id => [['GET', 'chat:' + id], ['GET', 'last:' + id], ['GET', 'unread:' + me + ':' + id], ['GET', 'pin:' + me + ':' + id], ['GET', 'mute:' + me + ':' + id]]));
+    const items = ids.map((_, i) => ({ 
+      chat: pj(r[i * 5]), last: pj(r[i * 5 + 1]), unread: Math.max(0, +r[i * 5 + 2] || 0),
+      pinned: r[i * 5 + 3] === '1', muted: r[i * 5 + 4] === '1'
+    })).filter(x => x.chat && (x.last || x.chat.createdBy === me || x.chat.saved));
     const others = items.map(x => x.chat.members.find(i => i !== me) || me);
-    const r2 = items.length ? await pipe([...others.map(o => ['GET', 'u:' + o]), ...others.map(o => ['GET', 'seen:' + o])]) : [];
-    const out = items.map((x, i) => ({
-      id: x.chat.id, user: pubUser(pj(r2[i]), +r2[items.length + i] || 0),
-      last: x.last ? { id: x.last.id, chatId: x.chat.id, senderId: x.last.senderId, text: x.last.text, time: x.last.time } : null,
-      unread: x.unread, updated: x.last ? x.last.time : x.chat.createdAt
-    })).sort((a, b) => b.updated - a.updated);
+    const r2 = items.length ? await pipe([...others.map(o => ['GET', 'u:' + o]), ...others.map(o => ['GET', 'seen:' + o]), ...others.map(o => ['GET', 'contact:' + me + ':' + o])]) : [];
+    const out = items.map((x, i) => {
+      const other = pj(r2[i]);
+      const custom = pj(r2[items.length * 2 + i]);
+      const user = x.chat.saved ? { id: me, firstName: 'Saved Messages', username: me, profilePhoto: '', online: false, lastSeen: 0 }
+        : other ? { ...pubUser(other, +r2[items.length + i] || 0), firstName: custom?.name || other.firstName, profilePhoto: custom?.photo || other.profilePhoto } : pubUser(null);
+      return {
+        id: x.chat.id, user, saved: !!x.chat.saved,
+        last: x.last ? { id: x.last.id, chatId: x.chat.id, senderId: x.last.senderId, text: x.last.text, time: x.last.time } : null,
+        unread: x.unread, updated: x.last ? x.last.time : x.chat.createdAt, pinned: x.pinned, muted: x.muted
+      };
+    }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updated - a.updated);
     return send(res, 200, out);
   }
 
@@ -248,6 +341,8 @@ async function route(req, res) {
     const tid = String(b.targetUserId || '');
     const target = ID_RE.test(tid) ? pj(await cmd('GET', 'u:' + tid)) : null;
     if (!target || target.id === me) throw E(400, 'Invalid user');
+    const blocked = await cmd('SISMEMBER', 'blocked:' + target.id, me);
+    if (blocked) throw E(403, 'User blocked you');
     const pk = 'pair:' + [me, target.id].sort().join(':');
     let chat = null;
     const existing = await cmd('GET', pk);
@@ -257,22 +352,59 @@ async function route(req, res) {
       await cmd('SET', 'chat:' + chat.id, JSON.stringify(chat));
       if (!(await cmd('SET', pk, chat.id, 'NX'))) chat = pj(await cmd('GET', 'chat:' + (await cmd('GET', pk))));
     }
-    const r = await pipe([['SADD', 'uchats:' + me, chat.id], ['GET', 'last:' + chat.id], ['GET', 'seen:' + target.id]]);
+    const r = await pipe([['SADD', 'uchats:' + me, chat.id], ['GET', 'last:' + chat.id], ['GET', 'seen:' + target.id], ['GET', 'contact:' + me + ':' + target.id]]);
     const last = pj(r[1]);
+    const custom = pj(r[3]);
     return send(res, 200, { success: true, chat: {
-      id: chat.id, user: pubUser(target, +r[2] || 0), last: last ? { ...last, chatId: chat.id } : null, unread: 0, updated: last ? last.time : chat.createdAt
+      id: chat.id, user: { ...pubUser(target, +r[2] || 0), firstName: custom?.name || target.firstName, profilePhoto: custom?.photo || target.profilePhoto },
+      last: last ? { ...last, chatId: chat.id } : null, unread: 0, updated: last ? last.time : chat.createdAt, pinned: false, muted: false
     } });
+  }
+
+  if ((mt = p.match(/^chats\/pin\/([a-f0-9]+)$/)) && m === 'POST') {
+    const chat = await getChat(mt[1], me);
+    const b = await body(req);
+    if (b.pin) await cmd('SET', 'pin:' + me + ':' + chat.id, '1');
+    else await cmd('DEL', 'pin:' + me + ':' + chat.id);
+    return send(res, 200, { success: true });
+  }
+
+  if ((mt = p.match(/^chats\/mute\/([a-f0-9]+)$/)) && m === 'POST') {
+    const chat = await getChat(mt[1], me);
+    const b = await body(req);
+    if (b.mute) await cmd('SET', 'mute:' + me + ':' + chat.id, '1');
+    else await cmd('DEL', 'mute:' + me + ':' + chat.id);
+    return send(res, 200, { success: true });
   }
 
   if ((mt = p.match(/^chats\/clear\/([a-f0-9]+)$/)) && m === 'DELETE') {
     const chat = await getChat(mt[1], me);
     const other = chat.members.find(i => i !== me);
     const ids = await cmd('ZRANGE', 'cm:' + chat.id, 0, -1);
-    await pipe([
+    const cmds = [
       ...(ids.length ? [['DEL', ...ids.map(i => 'm:' + i)]] : []),
-      ['DEL', 'cm:' + chat.id, 'last:' + chat.id, 'unread:' + me + ':' + chat.id, 'unread:' + other + ':' + chat.id],
-      ['INCR', 'ver:' + other]
-    ]);
+      ['DEL', 'cm:' + chat.id, 'last:' + chat.id, 'unread:' + me + ':' + chat.id, 'pin:' + me + ':' + chat.id],
+      ['INCR', 'ver:' + me]
+    ];
+    if (other) cmds.push(['DEL', 'unread:' + other + ':' + chat.id], ['INCR', 'ver:' + other]);
+    await pipe(cmds);
+    return send(res, 200, { success: true });
+  }
+
+  if ((mt = p.match(/^chats\/delete\/([a-f0-9]+)$/)) && m === 'DELETE') {
+    const chat = await getChat(mt[1], me);
+    const b = await body(req);
+    const forBoth = !!b.forBoth;
+    const other = chat.members.find(i => i !== me);
+    const cmds = [['SREM', 'uchats:' + me, chat.id]];
+    if (forBoth && other) {
+      const ids = await cmd('ZRANGE', 'cm:' + chat.id, 0, -1);
+      cmds.push(['SREM', 'uchats:' + other, chat.id]);
+      if (ids.length) cmds.push(['DEL', ...ids.map(i => 'm:' + i)]);
+      cmds.push(['DEL', 'cm:' + chat.id, 'last:' + chat.id, 'chat:' + chat.id]);
+      cmds.push(['INCR', 'ver:' + other]);
+    }
+    await pipe(cmds);
     return send(res, 200, { success: true });
   }
 
@@ -284,7 +416,7 @@ async function route(req, res) {
     const upd = ms.filter(x => x.senderId !== me && !x.readBy.includes(me));
     const cmds = upd.map(x => { x.readBy.push(me); return ['SET', 'm:' + x.id, JSON.stringify(x)]; });
     cmds.push(['DEL', 'unread:' + me + ':' + chat.id]);
-    if (upd.length) cmds.push(['INCR', 'ver:' + other]);
+    if (upd.length && other) cmds.push(['INCR', 'ver:' + other]);
     await pipe(cmds);
     return send(res, 200, { success: true });
   }
@@ -292,7 +424,8 @@ async function route(req, res) {
   if (m === 'POST' && p === 'typing') {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
-    await cmd('SET', 'typing:' + chat.id + ':' + me, 1, 'EX', 5);
+    const other = chat.members.find(i => i !== me);
+    if (other) await cmd('SET', 'typing:' + chat.id + ':' + me, 1, 'EX', 5);
     return send(res, 200, { success: true });
   }
 
@@ -310,55 +443,113 @@ async function route(req, res) {
   if (m === 'POST' && p === 'messages') {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
+    const other = chat.members.find(i => i !== me);
+    if (other) {
+      const blocked = await cmd('SISMEMBER', 'blocked:' + other, me);
+      if (blocked) throw E(403, 'You are blocked');
+    }
     const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
-    if (!text) throw E(400, 'Empty message');
+    let media = null;
+    if (b.media && validMedia(b.media)) media = b.media;
+    if (!text && !media) throw E(400, 'Empty message');
     let replyTo = null, replyMsg = null;
     if (b.replyTo && ID_RE.test(String(b.replyTo))) {
       const r = pj(await cmd('GET', 'm:' + b.replyTo));
       if (r && r.chatId === chat.id) { replyTo = r.id; replyMsg = r; }
     }
-    const other = chat.members.find(i => i !== me);
-    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [] };
-    const last = { id: msg.id, chatId: chat.id, senderId: me, text: text.slice(0, 200), time: msg.time };
-    await pipe([
+    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [], media, reactions: {}, pinned: false };
+    const lastText = text || (media ? (media.type === 'image' ? '📷 Photo' : media.type === 'video' ? '🎥 Video' : media.type === 'voice' ? '🎤 Voice message' : media.type === 'audio' ? '🎵 Audio' : media.type === 'gif' ? '🎞 GIF' : '📎 File') : '');
+    const last = { id: msg.id, chatId: chat.id, senderId: me, text: lastText.slice(0, 200), time: msg.time };
+    const cmds = [
       ['SET', 'm:' + msg.id, JSON.stringify(msg)], ['ZADD', 'cm:' + chat.id, msg.time, msg.id],
-      ['SET', 'last:' + chat.id, JSON.stringify(last)], ['INCR', 'unread:' + other + ':' + chat.id],
-      ['SADD', 'uchats:' + other, chat.id], ['SADD', 'uchats:' + me, chat.id],
-      ['DEL', 'typing:' + chat.id + ':' + me], ['INCR', 'ver:' + other]
-    ]);
+      ['SET', 'last:' + chat.id, JSON.stringify(last)], ['SADD', 'uchats:' + me, chat.id],
+      ['DEL', 'typing:' + chat.id + ':' + me], ['INCR', 'ver:' + me]
+    ];
+    if (other) cmds.push(['INCR', 'unread:' + other + ':' + chat.id], ['SADD', 'uchats:' + other, chat.id], ['INCR', 'ver:' + other]);
+    await pipe(cmds);
     return send(res, 200, { success: true, message: msgView(msg, replyView(replyMsg)) });
+  }
+
+  if ((mt = p.match(/^messages\/([a-f0-9]+)\/react$/)) && m === 'POST') {
+    const b = await body(req);
+    const msg = pj(await cmd('GET', 'm:' + mt[1]));
+    if (!msg) throw E(404, 'Message not found');
+    const chat = await getChat(msg.chatId, me);
+    const other = chat.members.find(i => i !== me);
+    const emoji = String(b.emoji || '').slice(0, 8);
+    if (!emoji) throw E(400, 'No emoji');
+    if (!msg.reactions) msg.reactions = {};
+    if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+    const idx = msg.reactions[emoji].indexOf(me);
+    if (idx > -1) msg.reactions[emoji].splice(idx, 1);
+    else msg.reactions[emoji].push(me);
+    if (!msg.reactions[emoji].length) delete msg.reactions[emoji];
+    await pipe([['SET', 'm:' + msg.id, JSON.stringify(msg)], ['INCR', 'ver:' + me], ...(other ? [['INCR', 'ver:' + other]] : [])]);
+    return send(res, 200, { success: true, reactions: msg.reactions });
+  }
+
+  if ((mt = p.match(/^messages\/([a-f0-9]+)\/pin$/)) && m === 'POST') {
+    const msg = pj(await cmd('GET', 'm:' + mt[1]));
+    if (!msg) throw E(404, 'Message not found');
+    const chat = await getChat(msg.chatId, me);
+    const other = chat.members.find(i => i !== me);
+    msg.pinned = !msg.pinned;
+    await pipe([['SET', 'm:' + msg.id, JSON.stringify(msg)], ['INCR', 'ver:' + me], ...(other ? [['INCR', 'ver:' + other]] : [])]);
+    return send(res, 200, { success: true, pinned: msg.pinned });
   }
 
   if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && (m === 'PUT' || m === 'DELETE')) {
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
-    if (!msg || msg.senderId !== me) throw E(404, 'Message not found');
+    if (!msg) throw E(404, 'Message not found');
     const chat = await getChat(msg.chatId, me);
     const other = chat.members.find(i => i !== me);
     if (m === 'PUT') {
+      if (msg.senderId !== me) throw E(403, 'Can only edit your own messages');
       const b = await body(req);
       const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
       if (!text) throw E(400, 'Empty message');
       msg.text = text; msg.edited = true;
-      const cmds = [['SET', 'm:' + msg.id, JSON.stringify(msg)], ['INCR', 'ver:' + other]];
+      const cmds = [['SET', 'm:' + msg.id, JSON.stringify(msg)], ['INCR', 'ver:' + me]];
+      if (other) cmds.push(['INCR', 'ver:' + other]);
       const last = pj(await cmd('GET', 'last:' + chat.id));
       if (last && last.id === msg.id) cmds.push(['SET', 'last:' + chat.id, JSON.stringify({ ...last, text: text.slice(0, 200) })]);
       await pipe(cmds);
       const rm = msg.replyTo ? pj(await cmd('GET', 'm:' + msg.replyTo)) : null;
       return send(res, 200, { success: true, message: msgView(msg, msg.replyTo ? (rm ? replyView(rm) : { id: msg.replyTo, deleted: true }) : null) });
     }
-    const cmds = [['ZREM', 'cm:' + chat.id, msg.id], ['DEL', 'm:' + msg.id]];
-    if (!msg.readBy.length) {
+    const b = await body(req);
+    const forBoth = !!b.forBoth || msg.senderId === me;
+    const cmds = [];
+    if (forBoth) {
+      cmds.push(['ZREM', 'cm:' + chat.id, msg.id], ['DEL', 'm:' + msg.id]);
+      if (other) cmds.push(['INCR', 'ver:' + other]);
+    } else {
+      // Delete only for me - add to hidden list
+      cmds.push(['SADD', 'hidden:' + me + ':' + chat.id, msg.id]);
+    }
+    if (!msg.readBy.length && other) {
       const key = 'unread:' + other + ':' + chat.id;
       if (+(await cmd('GET', key)) > 0) cmds.push(['DECR', key]);
     }
+    cmds.push(['INCR', 'ver:' + me]);
     await pipe(cmds);
-    const lastIds = await cmd('ZRANGE', 'cm:' + chat.id, -1, -1);
-    const lm = lastIds.length ? pj(await cmd('GET', 'm:' + lastIds[0])) : null;
-    await pipe([
-      lm ? ['SET', 'last:' + chat.id, JSON.stringify({ id: lm.id, chatId: chat.id, senderId: lm.senderId, text: lm.text.slice(0, 200), time: lm.time })] : ['DEL', 'last:' + chat.id],
-      ['INCR', 'ver:' + other]
-    ]);
+    if (forBoth) {
+      const lastIds = await cmd('ZRANGE', 'cm:' + chat.id, -1, -1);
+      const lm = lastIds.length ? pj(await cmd('GET', 'm:' + lastIds[0])) : null;
+      await pipe([lm ? ['SET', 'last:' + chat.id, JSON.stringify({ id: lm.id, chatId: chat.id, senderId: lm.senderId, text: lm.text.slice(0, 200), time: lm.time })] : ['DEL', 'last:' + chat.id]]);
+    }
     return send(res, 200, { success: true });
+  }
+
+  /* ----- Search messages in chat ----- */
+  if ((mt = p.match(/^messages\/([a-f0-9]+)\/search$/)) && m === 'GET') {
+    const chat = await getChat(mt[1], me);
+    const q = clean(url.searchParams.get('q'), 100).toLowerCase();
+    if (!q) return send(res, 200, []);
+    const ids = await cmd('ZRANGE', 'cm:' + chat.id, -500, -1);
+    const ms = (await mget(ids.map(i => 'm:' + i))).filter(Boolean);
+    const found = ms.filter(x => x.text && x.text.toLowerCase().includes(q)).slice(-30);
+    return send(res, 200, found.map(x => msgView(x, null)));
   }
 
   throw E(404, 'Not found');
