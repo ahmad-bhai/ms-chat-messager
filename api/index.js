@@ -92,7 +92,7 @@ const pubUser = (u, seen) => u ? ({
   online: !!seen && Date.now() - seen < ONLINE_MS, lastSeen: seen || 0
 }) : { id: '', firstName: 'Deleted', username: '', bio: '', profilePhoto: '', online: false, lastSeen: 0 };
 const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text, time: m.time, edited: !!m.edited, read: (m.readBy||[]).length > 0, replyTo: reply || null, type: m.type || 'text', mediaUrl: m.mediaUrl || '', fileName: m.fileName || '', reactions: m.reactions || {}, pinned: !!m.pinned });
-const replyView = r => r ? { id: r.id, senderId: r.senderId, text: r.text.slice(0, 120) } : null;
+const replyView = r => r ? { id: r.id, senderId: r.senderId, text: (r.text||'').slice(0, 120) } : null;
 
 async function getChat(id, me) {
   id = String(id || '');
@@ -235,7 +235,6 @@ async function route(req, res) {
     const target = ID_RE.test(tid) ? pj(await cmd('GET', 'u:' + tid)) : null;
     if (!target) throw E(400, 'Invalid user');
     if (target.id === me) {
-      // Saved messages chat with self
       const pk = 'self:' + me;
       let chat = null;
       const existing = await cmd('GET', pk);
@@ -320,7 +319,7 @@ async function route(req, res) {
     }
     const other = chat.members.find(i => i !== me) || me;
     const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [], type, mediaUrl, fileName: clean(b.fileName, 100), reactions: {}, pinned: false };
-    const lastText = type === 'text' ? text.slice(0, 200) : (type === 'image' ? '📷 Photo' : type === 'video' ? '🎬 Video' : type === 'audio' ? '🎤 Audio' : '📎 File');
+    const lastText = type === 'text' ? text.slice(0, 200) : (type === 'image' ? '📷 Photo' : type === 'video' ? '🎬 Video' : type === 'audio' ? '🎤 Voice' : '📎 File');
     const last = { id: msg.id, chatId: chat.id, senderId: me, text: lastText, time: msg.time };
     const cmds = [
       ['SET', 'm:' + msg.id, JSON.stringify(msg)], ['ZADD', 'cm:' + chat.id, msg.time, msg.id],
@@ -342,8 +341,6 @@ async function route(req, res) {
     if (!msg) throw E(404, 'Message not found');
     const chat = await getChat(msg.chatId, me);
     const other = chat.members.find(i => i !== me) || me;
-    // For delete, allow anyone in chat (both directions) - per user request
-    if (m === 'DELETE' && msg.senderId !== me && !chat.members.includes(me)) throw E(403, 'Not allowed');
     if (m === 'PUT' && msg.senderId !== me) throw E(403, 'Not allowed');
     if (m === 'PUT') {
       const b = await body(req);
@@ -374,7 +371,6 @@ async function route(req, res) {
     return send(res, 200, { success: true });
   }
 
-  // Pin/unpin
   if ((mt = p.match(/^messages\/([a-f0-9]+)\/pin$/)) && m === 'POST') {
     const b = await body(req);
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
@@ -382,10 +378,11 @@ async function route(req, res) {
     const chat = await getChat(msg.chatId, me);
     msg.pinned = !!b.pinned;
     await cmd('SET', 'm:' + msg.id, JSON.stringify(msg));
+    const other = chat.members.find(i => i !== me) || me;
+    if (other !== me) await cmd('INCR', 'ver:' + other);
     return send(res, 200, { success: true, pinned: msg.pinned });
   }
 
-  // Reactions
   if ((mt = p.match(/^messages\/([a-f0-9]+)\/react$/)) && m === 'POST') {
     const b = await body(req);
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
@@ -414,4 +411,5 @@ module.exports = async function handler(req, res) {
     console.error(e);
     send(res, 500, { success: false, message: 'Server error' });
   }
+};
 };
