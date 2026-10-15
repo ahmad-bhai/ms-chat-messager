@@ -42,8 +42,8 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 /* Auth */
 .screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--chat-bg);z-index:50;padding:20px;overflow:auto}
 [data-theme="light"] .screen{background:#fff}
-.auth-card{width:100%;max-width:360px;text-align:center}
-.logo{width:120px;height:120px;border-radius:50%;margin:0 auto 24px;background:linear-gradient(135deg,#37aee2,#1e96c8);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.auth-card{width:100%;max-width:380px;text-align:center}
+.logo{width:120px;height:120px;border-radius:50%;margin:0 auto 24px;background:linear-gradient(,#37aee2,#1e96c8);display:flex;align-items:center;justify-content:center;overflow:hidden}
 .logo img{width:100%;height:100%;object-fit:cover}
 .auth-card h1{font-size:28px;font-weight:600;margin-bottom:8px}
 .sub{color:var(--text2);margin-bottom:28px;line-height:1.4}
@@ -305,7 +305,7 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 <!-- AUTH -->
 <div id="auth" class="screen">
   <div class="auth-card">
-    <div class="logo"><img src="https://web.telegram.org/a/img-apple-64/1f4ac.png" alt="MS Chat"></div>
+    <div class="logo"><img src="https://ms-chat-messager.vercel.app/icon-512.png" alt="MS Chat" onerror="this.style.display='none';this.parentElement.innerHTML='<svg viewBox=\'0 0 24 24\' width=\'64\' height=\'64\'><path fill=\'#fff\' d=\'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z\'/></svg>'"></div>
     <h1 id="authTitle">MS Chat</h1>
     <p id="authSub" class="sub">Please enter your email to continue.</p>
     <form id="authForm" novalidate>
