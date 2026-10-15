@@ -1,9 +1,8 @@
 {
   "name": "ms-chat",
-  "version": "2.0.0",
-  "description": "MS Chat - Telegram style PWA messenger for Vercel",
+  "version": "1.0.0",
   "private": true,
-  "engines": {
-    "node": ">=18"
+  "dependencies": {
+    "@vercel/blob": "^0.27.0"
   }
 }
