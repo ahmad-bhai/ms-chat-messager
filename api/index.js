@@ -412,4 +412,3 @@ module.exports = async function handler(req, res) {
     send(res, 500, { success: false, message: 'Server error' });
   }
 };
-};
