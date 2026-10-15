@@ -9,8 +9,11 @@ const ONLINE_MS = 35000;
 class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 const E = (c, m) => new HttpError(c, m);
 
+/* ============= Redis helpers ============= */
 async function pipe(cmds) {
-  if (!REDIS_URL || !REDIS_TOKEN) throw E(500, 'Database not configured.');
+  if (!REDIS_URL || !REDIS_TOKEN) {
+    throw E(500, 'Database not configured. Go to Vercel → Storage → Connect Upstash Redis, then Redeploy (no cache).');
+  }
   if (!cmds.length) return [];
   const r = await fetch(REDIS_URL.replace(/\/$/, '') + '/pipeline', {
     method: 'POST',
@@ -19,7 +22,7 @@ async function pipe(cmds) {
   });
   let data;
   try { data = await r.json(); } catch (e) { throw new Error('Bad Redis response'); }
-  if (!r.ok || !Array.isArray(data)) throw new Error('Redis error');
+  if (!r.ok || !Array.isArray(data)) throw new Error('Redis error: ' + (data && data.error));
   return data.map(x => { if (x.error) throw new Error('Redis: ' + x.error); return x.result; });
 }
 const cmd = async (...c) => (await pipe([c]))[0];
@@ -80,7 +83,7 @@ async function body(req) {
     if (typeof req.body === 'string') { if (!req.body.trim()) return {}; try { return JSON.parse(req.body); } catch (e) { throw E(400, 'Bad JSON'); } }
   }
   const chunks = []; let n = 0;
-  for await (const c of req) { n += c.length; if (n > 2000000) throw E(413, 'Payload too large'); chunks.push(c); }
+  for await (const c of req) { n += c.length; if (n > 50 * 1024 * 1024) throw E(413, 'Payload too large'); chunks.push(c); }
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch (e) { throw E(400, 'Bad JSON'); }
 }
@@ -103,6 +106,7 @@ async function getChat(id, me) {
 }
 async function loadUser(id) { const u = pj(await cmd('GET', 'u:' + id)); if (!u) throw E(401, 'Not signed in'); return u; }
 
+/* ============= ROUTER ============= */
 async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
   let p = url.pathname.replace(/^\/api\/?/, '').replace(/\/+$/, '');
@@ -110,8 +114,16 @@ async function route(req, res) {
   const m = req.method;
   let mt;
 
-  if (m === 'GET' && p === 'health') return send(res, 200, { ok: true, db: !!(REDIS_URL && REDIS_TOKEN) });
+  if (m === 'GET' && p === 'health') {
+    let dbOk = false, err = null;
+    try {
+      if (REDIS_URL && REDIS_TOKEN) { await cmd('PING'); dbOk = true; }
+      else err = 'Missing KV_REST_API_URL / KV_REST_API_TOKEN. Add Upstash Redis from Vercel → Storage.';
+    } catch (e) { err = String(e.message || e); }
+    return send(res, dbOk ? 200 : 500, { ok: dbOk, db: dbOk, error: err });
+  }
 
+  /* ---------- Public auth ---------- */
   if (m === 'POST' && p === 'auth/check-email') {
     const b = await body(req);
     const email = clean(b.email, 120).toLowerCase();
@@ -157,6 +169,38 @@ async function route(req, res) {
     return send(res, 200, { success: true, token: signToken(user.id), user: selfUser(user) });
   }
 
+  if (m === 'POST' && p === 'auth/forgot') {
+    const b = await body(req);
+    const email = clean(b.email, 120).toLowerCase();
+    if (!EMAIL_RE.test(email)) throw E(400, 'Enter a valid email');
+    const id = await cmd('GET', 'e:' + email);
+    if (id) {
+      // Create a reset token stored in Redis for 1 hour
+      const resetToken = crypto.randomBytes(24).toString('hex');
+      await cmd('SET', 'pwreset:' + resetToken, id, 'EX', 3600);
+      // In production, email this link. For now, return it in response for demo.
+      console.log('[Password reset] for', email, '→ https://ms-chat-messengersss.vercel.app/?reset=' + resetToken);
+    }
+    // Always success (prevent email enumeration)
+    return send(res, 200, { success: true, message: 'If the email exists, reset instructions were sent.' });
+  }
+
+  if (m === 'POST' && p === 'auth/reset-password') {
+    const b = await body(req);
+    const resetToken = clean(b.token, 100);
+    const newPassword = String(b.newPassword || '');
+    if (!resetToken || newPassword.length < 6) throw E(400, 'Invalid request');
+    const userId = await cmd('GET', 'pwreset:' + resetToken);
+    if (!userId) throw E(400, 'Reset link expired');
+    const user = pj(await cmd('GET', 'u:' + userId));
+    if (!user) throw E(400, 'User not found');
+    user.pass = await hashSecret(newPassword);
+    await cmd('SET', 'u:' + userId, JSON.stringify(user));
+    await cmd('DEL', 'pwreset:' + resetToken);
+    return send(res, 200, { success: true, message: 'Password updated. Sign in now.' });
+  }
+
+  /* ---------- Authenticated ---------- */
   const me = authId(req);
 
   if (m === 'GET' && p === 'sync') {
@@ -172,6 +216,7 @@ async function route(req, res) {
   if (m === 'GET' && p === 'me') return send(res, 200, { success: true, user: selfUser(await loadUser(me)) });
   if (m === 'POST' && p === 'auth/logout') return send(res, 200, { success: true });
 
+  /* Update user profile */
   if (m === 'POST' && p === 'user/update') {
     const b = await body(req);
     const user = await loadUser(me);
@@ -180,19 +225,12 @@ async function route(req, res) {
     if (!firstName) throw E(400, 'First name is required');
     if (!USER_RE.test(username)) throw E(400, 'Username: 3-20 letters, numbers or underscore');
     if (!validPhoto(b.profilePhoto)) throw E(400, 'Invalid profile photo');
-    let pin = user.pin, twoStep = false;
-    if (b.twoStepEnabled) {
-      const raw = String(b.twoStepPassword || '');
-      if (raw) { if (raw.length < 4) throw E(400, 'PIN must be at least 4 characters'); pin = await hashSecret(raw); }
-      else if (!user.pin) throw E(400, 'Set a PIN to enable two-step verification');
-      twoStep = true;
-    } else pin = null;
     const oldName = user.username.toLowerCase(), newName = username.toLowerCase();
     if (oldName !== newName) {
       if (!(await cmd('SET', 'n:' + newName, me, 'NX'))) throw E(409, 'Username is taken');
     }
     const oldFirst = user.firstName.toLowerCase();
-    Object.assign(user, { firstName, username, bio: clean(b.bio, 120), profilePhoto: b.profilePhoto || '', twoStepEnabled: twoStep, pin });
+    Object.assign(user, { firstName, username, bio: clean(b.bio, 120), profilePhoto: b.profilePhoto || '' });
     const cmds = [
       ['SET', 'u:' + me, JSON.stringify(user)],
       ['ZREM', 'idx', oldName + '|' + me, oldFirst + '|' + me],
@@ -203,9 +241,67 @@ async function route(req, res) {
     return send(res, 200, { success: true, user: selfUser(user) });
   }
 
+  /* Change email */
+  if (m === 'POST' && p === 'user/change-email') {
+    const b = await body(req);
+    const user = await loadUser(me);
+    const email = clean(b.email, 120).toLowerCase();
+    const password = String(b.password || '');
+    if (!EMAIL_RE.test(email)) throw E(400, 'Enter a valid email');
+    if (!(await checkSecret(password, user.pass))) throw E(401, 'Wrong password');
+    if (email === user.email) throw E(400, 'Same as current email');
+    const exists = await cmd('GET', 'e:' + email);
+    if (exists && exists !== me) throw E(409, 'Email already registered');
+    // Delete old email key (best effort)
+    await cmd('DEL', 'e:' + user.email);
+    if (!(await cmd('SET', 'e:' + email, me, 'NX'))) { await cmd('SET','e:'+user.email, me); throw E(409, 'Email already registered'); }
+    user.email = email;
+    await cmd('SET', 'u:' + me, JSON.stringify(user));
+    return send(res, 200, { success: true, user: selfUser(user) });
+  }
+
+  /* Change password */
+  if (m === 'POST' && p === 'user/change-password') {
+    const b = await body(req);
+    const user = await loadUser(me);
+    const cur = String(b.currentPassword || '');
+    const np = String(b.newPassword || '');
+    if (np.length < 6) throw E(400, 'Password must be at least 6 characters');
+    if (!(await checkSecret(cur, user.pass))) throw E(401, 'Wrong current password');
+    user.pass = await hashSecret(np);
+    await cmd('SET', 'u:' + me, JSON.stringify(user));
+    return send(res, 200, { success: true });
+  }
+
+  /* 2FA setup / remove */
+  if (m === 'POST' && p === 'user/set-2fa') {
+    const b = await body(req);
+    const user = await loadUser(me);
+    const password = String(b.password || '');
+    if (!(await checkSecret(password, user.pass))) throw E(401, 'Wrong password');
+    if (b.enabled) {
+      const pin = String(b.pin || '');
+      if (pin.length < 4) throw E(400, 'PIN must be at least 4 characters');
+      user.pin = await hashSecret(pin);
+      user.twoStepEnabled = true;
+    } else {
+      user.pin = null;
+      user.twoStepEnabled = false;
+    }
+    await cmd('SET', 'u:' + me, JSON.stringify(user));
+    return send(res, 200, { success: true, user: selfUser(user) });
+  }
+
+  /* ---------- Search users ---------- */
   if (m === 'GET' && p === 'users/search') {
     const q = clean(url.searchParams.get('q'), 40).replace(/^@/, '').toLowerCase();
     if (!q) return send(res, 200, []);
+    // Support searching by id too (used by openByUsername when reactions click)
+    if (ID_RE.test(q)) {
+      const u = pj(await cmd('GET', 'u:' + q));
+      if (u) return send(res, 200, [pubUser(u, +(await cmd('GET','seen:'+u.id))||0)]);
+      return send(res, 200, []);
+    }
     const members = await cmd('ZRANGEBYLEX', 'idx', '[' + q, '[' + q + 'ÿ', 'LIMIT', '0', '40');
     const ids = [...new Set(members.map(s => s.slice(s.lastIndexOf('|') + 1)))].filter(i => i !== me).slice(0, 20);
     if (!ids.length) return send(res, 200, []);
@@ -213,6 +309,7 @@ async function route(req, res) {
     return send(res, 200, ids.map((_, i) => pj(r[i]) && pubUser(pj(r[i]), +r[ids.length + i] || 0)).filter(Boolean));
   }
 
+  /* ---------- Chats list ---------- */
   if (m === 'GET' && p === 'chats') {
     const ids = await cmd('SMEMBERS', 'uchats:' + me);
     if (!ids.length) return send(res, 200, []);
@@ -229,6 +326,7 @@ async function route(req, res) {
     return send(res, 200, out);
   }
 
+  /* ---------- Create / get chat ---------- */
   if (m === 'POST' && p === 'chats/create') {
     const b = await body(req);
     const tid = String(b.targetUserId || '');
@@ -283,7 +381,7 @@ async function route(req, res) {
     const upd = ms.filter(x => x.senderId !== me && !(x.readBy||[]).includes(me));
     const cmds = upd.map(x => { x.readBy = x.readBy || []; x.readBy.push(me); return ['SET', 'm:' + x.id, JSON.stringify(x)]; });
     cmds.push(['DEL', 'unread:' + me + ':' + chat.id]);
-    if (upd.length) cmds.push(['INCR', 'ver:' + other]);
+    if (upd.length && other !== me) cmds.push(['INCR', 'ver:' + other]);
     await pipe(cmds);
     return send(res, 200, { success: true });
   }
@@ -291,10 +389,12 @@ async function route(req, res) {
   if (m === 'POST' && p === 'typing') {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
-    await cmd('SET', 'typing:' + chat.id + ':' + me, 1, 'EX', 5);
+    const other = chat.members.find(i => i !== me);
+    if (other) await cmd('SET', 'typing:' + chat.id + ':' + me, 1, 'EX', 5);
     return send(res, 200, { success: true });
   }
 
+  /* ---------- Load messages ---------- */
   if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && m === 'GET') {
     const chat = await getChat(mt[1], me);
     const ids = await cmd('ZRANGE', 'cm:' + chat.id, -300, -1);
@@ -305,20 +405,29 @@ async function route(req, res) {
     return send(res, 200, ms.map(x => msgView(x, x.replyTo ? (byId.has(x.replyTo) ? replyView(byId.get(x.replyTo)) : { id: x.replyTo, deleted: true }) : null)));
   }
 
+  /* ---------- Send message ---------- */
   if (m === 'POST' && p === 'messages') {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
     const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
     const type = ['text','image','video','audio','file'].includes(b.type) ? b.type : 'text';
-    const mediaUrl = typeof b.mediaUrl === 'string' && b.mediaUrl.length < 800000 ? b.mediaUrl : '';
+    // media can be either inline data URL or a /media/{id} URL from chunk upload
+    const mediaUrl = typeof b.mediaUrl === 'string' && b.mediaUrl.length < 40000000 ? b.mediaUrl : '';
     if (!text && !mediaUrl) throw E(400, 'Empty message');
+    // BLOCK CHECK: if other user blocked me OR I blocked them, reject
+    const other = chat.members.find(i => i !== me) || me;
+    if (other !== me) {
+      const blockedByOther = pj(await cmd('GET', 'blocked:' + other + ':' + me));
+      const blockedByMe = pj(await cmd('GET', 'blocked:' + me + ':' + other));
+      if (blockedByOther) throw E(403, 'You are blocked by this user');
+      if (blockedByMe) throw E(403, 'Unblock this user to send messages');
+    }
     let replyTo = null, replyMsg = null;
     if (b.replyTo && ID_RE.test(String(b.replyTo))) {
       const r = pj(await cmd('GET', 'm:' + b.replyTo));
       if (r && r.chatId === chat.id) { replyTo = r.id; replyMsg = r; }
     }
-    const other = chat.members.find(i => i !== me) || me;
-    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [], type, mediaUrl, fileName: clean(b.fileName, 100), reactions: {}, pinned: false };
+    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [], type, mediaUrl, fileName: clean(b.fileName, 200), reactions: {}, pinned: false };
     const lastText = type === 'text' ? text.slice(0, 200) : (type === 'image' ? '📷 Photo' : type === 'video' ? '🎬 Video' : type === 'audio' ? '🎤 Voice' : '📎 File');
     const last = { id: msg.id, chatId: chat.id, senderId: me, text: lastText, time: msg.time };
     const cmds = [
@@ -336,6 +445,7 @@ async function route(req, res) {
     return send(res, 200, { success: true, message: msgView(msg, replyView(replyMsg)) });
   }
 
+  /* ---------- Edit / delete message ---------- */
   if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && (m === 'PUT' || m === 'DELETE')) {
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
     if (!msg) throw E(404, 'Message not found');
@@ -355,6 +465,7 @@ async function route(req, res) {
       const rm = msg.replyTo ? pj(await cmd('GET', 'm:' + msg.replyTo)) : null;
       return send(res, 200, { success: true, message: msgView(msg, msg.replyTo ? (rm ? replyView(rm) : { id: msg.replyTo, deleted: true }) : null) });
     }
+    // DELETE: allow both sides
     const cmds = [['ZREM', 'cm:' + chat.id, msg.id], ['DEL', 'm:' + msg.id]];
     if (!(msg.readBy||[]).length && other !== me) {
       const key = 'unread:' + other + ':' + chat.id;
@@ -371,6 +482,7 @@ async function route(req, res) {
     return send(res, 200, { success: true });
   }
 
+  /* ---------- Pin message ---------- */
   if ((mt = p.match(/^messages\/([a-f0-9]+)\/pin$/)) && m === 'POST') {
     const b = await body(req);
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
@@ -383,6 +495,7 @@ async function route(req, res) {
     return send(res, 200, { success: true, pinned: msg.pinned });
   }
 
+  /* ---------- Reactions ---------- */
   if ((mt = p.match(/^messages\/([a-f0-9]+)\/react$/)) && m === 'POST') {
     const b = await body(req);
     const msg = pj(await cmd('GET', 'm:' + mt[1]));
@@ -401,6 +514,92 @@ async function route(req, res) {
     return send(res, 200, { success: true, reactions: msg.reactions });
   }
 
+  /* ---------- Chunk upload for large files (up to 600 MB) ---------- */
+  if (m === 'POST' && p === 'upload/chunk') {
+    const b = await body(req);
+    const uploadId = clean(b.uploadId, 60);
+    const index = Number(b.index) | 0;
+    const total = Number(b.total) | 0;
+    const kind = clean(b.kind, 20);
+    const mime = clean(b.mime, 100) || 'application/octet-stream';
+    const fileName = clean(b.fileName, 200);
+    const fileSize = Number(b.fileSize) | 0;
+    const dataB64 = typeof b.data === 'string' ? b.data : '';
+    if (!uploadId || !total || !dataB64) throw E(400, 'Invalid chunk');
+    if (dataB64.length > 8 * 1024 * 1024) throw E(413, 'Chunk too large');
+    const key = 'up:' + uploadId + ':' + index;
+    await cmd('SET', key, dataB64, 'EX', 3600);
+    // Init metadata on first chunk
+    if (index === 0) {
+      await cmd('SET', 'upmeta:' + uploadId, JSON.stringify({ kind, mime, fileName, fileSize, total, owner: me, createdAt: Date.now() }), 'EX', 3600);
+    }
+    return send(res, 200, { success: true, index });
+  }
+
+  if (m === 'POST' && p === 'upload/finish') {
+    const b = await body(req);
+    const uploadId = clean(b.uploadId, 60);
+    const total = Number(b.total) | 0;
+    if (!uploadId) throw E(400, 'Missing uploadId');
+    const meta = pj(await cmd('GET', 'upmeta:' + uploadId));
+    if (!meta) throw E(400, 'Upload expired');
+    if (meta.owner !== me) throw E(403, 'Not yours');
+    // Read all chunks and concatenate
+    const keys = [];
+    for (let i = 0; i < total; i++) keys.push('up:' + uploadId + ':' + i);
+    const parts = await pipe(keys.map(k => ['GET', k]));
+    if (parts.some(p => !p)) throw E(400, 'Missing chunks');
+    const buf = Buffer.concat(parts.map(p => Buffer.from(p, 'base64')));
+    // Store media in redis as base64 with 7-day TTL (600MB limit; keep ttl short)
+    const mediaId = uid();
+    await cmd('SET', 'media:' + mediaId, buf.toString('base64'), 'EX', 7 * 86400);
+    // Also store metadata
+    await cmd('SET', 'media:' + mediaId + ':meta', JSON.stringify({ mime: meta.mime, fileName: meta.fileName, size: meta.fileSize, owner: me, createdAt: Date.now() }), 'EX', 7 * 86400);
+    // Cleanup chunks
+    await pipe([['DEL', ...keys], ['DEL', 'upmeta:' + uploadId]]);
+    // URL points to a download endpoint
+    const url = '/api/media/' + mediaId;
+    return send(res, 200, { success: true, url, mediaId });
+  }
+
+  /* ---------- Media download ---------- */
+  if ((mt = p.match(/^media\/([a-f0-9]+)$/)) && m === 'GET') {
+    const mediaId = mt[1];
+    const b64 = await cmd('GET', 'media:' + mediaId);
+    if (!b64) throw E(404, 'Media expired');
+    const meta = pj(await cmd('GET', 'media:' + mediaId + ':meta')) || {};
+    const buf = Buffer.from(b64, 'base64');
+    res.statusCode = 200;
+    res.setHeader('Content-Type', meta.mime || 'application/octet-stream');
+    if (meta.fileName) res.setHeader('Content-Disposition', 'inline; filename="' + meta.fileName.replace(/"/g, '') + '"');
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.end(buf);
+    return;
+  }
+
+  /* ---------- Block / Unblock ---------- */
+  if (m === 'POST' && p === 'users/block') {
+    const b = await body(req);
+    const targetId = clean(b.userId, 40);
+    if (!ID_RE.test(targetId) || targetId === me) throw E(400, 'Invalid user');
+    const enabled = !!b.blocked;
+    const key = 'blocked:' + me + ':' + targetId;
+    if (enabled) await cmd('SET', key, '1');
+    else await cmd('DEL', key);
+    // Notify other
+    await cmd('INCR', 'ver:' + targetId);
+    return send(res, 200, { success: true, blocked: enabled });
+  }
+
+  /* ---------- Check block status ---------- */
+  if (m === 'GET' && p === 'users/block-status') {
+    const targetId = clean(url.searchParams.get('userId'), 40);
+    if (!ID_RE.test(targetId)) throw E(400, 'Invalid user');
+    const byMe = !!(await cmd('GET', 'blocked:' + me + ':' + targetId));
+    const byThem = !!(await cmd('GET', 'blocked:' + targetId + ':' + me));
+    return send(res, 200, { success: true, byMe, byThem });
+  }
+
   throw E(404, 'Not found');
 }
 
@@ -408,7 +607,7 @@ module.exports = async function handler(req, res) {
   try { await route(req, res); }
   catch (e) {
     if (e instanceof HttpError) return send(res, e.code, { success: false, message: e.message });
-    console.error(e);
-    send(res, 500, { success: false, message: 'Server error' });
+    console.error('[MS-Chat]', e);
+    send(res, 500, { success: false, message: 'Server error: ' + (e.message || 'unknown') });
   }
 };
