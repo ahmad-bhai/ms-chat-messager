@@ -38,6 +38,7 @@ img.emoji{width:22px;height:22px;vertical-align:-4px;margin:0 1px;display:inline
 img.emoji.sm{width:18px;height:18px;vertical-align:-3px}
 img.emoji.big{width:56px;height:56px;vertical-align:middle}
 
+/* Auth */
 .screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--chat-bg);z-index:50;padding:20px;overflow:auto}
 [data-theme="light"] .screen{background:#fff}
 .auth-card{width:100%;max-width:380px;text-align:center}
@@ -58,6 +59,7 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 .link{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.4px;padding:14px;width:100%}
 .link.danger{color:var(--danger)}
 
+/* Layout */
 #app{display:flex;height:100vh;height:100dvh;width:100%;position:relative;overflow:hidden}
 .sidebar{width:380px;max-width:42%;min-width:300px;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .sb-head{display:flex;align-items:center;gap:8px;padding:8px 10px;padding-top:max(8px,env(safe-area-inset-top))}
@@ -92,6 +94,7 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 .av img{width:100%;height:100%;object-fit:cover;border-radius:50%}
 .dot{position:absolute;right:1px;bottom:1px;width:14px;height:14px;border-radius:50%;background:var(--online);border:2.5px solid var(--sidebar)}
 
+/* Chat */
 .chat-main{flex:1;min-width:0;position:relative;background:var(--chat-bg);background-size:cover;background-position:center}
 .chat-main::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(circle at 20% 15%,rgba(80,120,200,.12),transparent 45%),radial-gradient(circle at 80% 85%,rgba(60,170,140,.1),transparent 45%)}
 [data-theme="light"] .chat-main::before{background:radial-gradient(circle at 15% 20%,#e5efc9,transparent 50%),radial-gradient(circle at 85% 80%,#b9dbe0,transparent 50%);opacity:.9}
@@ -375,6 +378,7 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 (() => {
 'use strict';
 
+/* ================= ICONS ================= */
 const ICONS = {
   menu:'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
   back:'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
@@ -415,10 +419,11 @@ const ICONS = {
   mail:'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
   key:'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
   fingerprint:'M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.09.18-.26.28-.44.28zM3.5 9.72a.5.5 0 0 1-.41-.79c.99-1.4 2.25-2.5 3.75-3.27C9.98 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25a.5.5 0 0 1-.12.7c-.23.16-.54.11-.7-.12-.9-1.27-2.04-2.26-3.39-2.94-2.87-1.47-6.54-1.47-9.4.01-1.36.7-2.5 1.7-3.4 2.96-.08.14-.23.21-.39.21z',
-  privacy:'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z',
+  privacy:'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z'
 };
 const ic = (n, s=24) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="${ICONS[n]||ICONS.more}"/></svg>`;
 
+/* ================= UTILS ================= */
 const $ = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -437,15 +442,13 @@ function avatar(u, cls='', dot=false){
 let toastTimer;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
 const isMobile = () => window.matchMedia('(max-width:760px)').matches;
-const fmtBytes = b => { if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; if(b<1073741824) return (b/1048576).toFixed(1)+' MB'; return (b/1073741824).toFixed(2)+' GB'; };
 
-/* ===== EMOJI ===== */
-/* GitHub emoji-data (Apple 64px) — direct raw links */
+/* ================= EMOJIS ================= */
+/* GitHub iamcal/emoji-data (Apple) */
 const EMOJI_BASE = 'https://raw.githubusercontent.com/iamcal/emoji-data/master/img-apple-64/';
 function emojiToCode(ch){
   const cps=[];
   for(const ch2 of ch){cps.push(ch2.codePointAt(0).toString(16));}
-  // Remove fe0f (variation selector) as per your sed command
   return cps.filter(c=>c!=='fe0f').join('-');
 }
 function emojiImg(emoji, cls=''){
@@ -461,17 +464,18 @@ function isOnlyEmoji(str){
   if(!onlyEmojiRegex.test(trimmed)) return false;
   return countEmoji(trimmed) <= 3;
 }
-/* Renders text: escape HTML → convert emojis to <img> → linkify @, /, http */
+
+/* IMPORTANT FIX: Escape FIRST, then replace emojis, then linkify */
 function renderBody(text){
   if(text==null) return '';
   const bigEmoji = isOnlyEmoji(text);
   // 1) First, escape everything to prevent XSS
   let out = esc(text);
-  // 2) Replace emojis with <img> tags (now safe to inject raw HTML since it's our own)
+  // 2) Replace emojis with <img>
   out = out.replace(/\p{Extended_Pictographic}(\u200d\p{Extended_Pictographic})*[\u{FE0F}\u{FE0E}]?/gu, (m)=>{
     return emojiImg(m);
   });
-  // 3) Linkify: URLs, @mentions, /paths
+  // 3) Linkify URLs, @mentions, /paths
   out = out
     .replace(/(https?:\/\/[^\s<>"]+)/g, u => `<a href="#" data-url="${u}">${u}</a>`)
     .replace(/(^|[\s(])@([a-z0-9_]{3,20})\b/gi, (m,pre,name)=>`${pre}<a href="#" data-mention="${name}">@${name}</a>`)
@@ -480,6 +484,7 @@ function renderBody(text){
   return bigEmoji ? `<div class="emoji-big">${out}</div>` : out;
 }
 
+/* ================= SETTINGS & STATE ================= */
 const DEFAULT_SETTINGS = { theme:'dark', hour24:false, fontSize:15, wallpaper:'', notif:true, sound:true, doubleTapReaction:'❤️', animatedEmoji:true };
 let settings = {...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem('ms_settings')||'{}'))};
 function saveSettings(){localStorage.setItem('ms_settings',JSON.stringify(settings));}
@@ -537,6 +542,7 @@ function applySettings(){
 }
 applySettings();
 
+/* ================= API ================= */
 async function api(path, opts={}){
   let res, data={};
   try{
@@ -553,6 +559,7 @@ async function api(path, opts={}){
   return data;
 }
 
+/* ================= AUTH ================= */
 let step='email', savedEmail='';
 function showStep(s){
   step=s;
@@ -609,6 +616,7 @@ function finishAuth(r){
   start();
 }
 
+/* ================= BOOT ================= */
 async function boot(){
   if(!token) return showStep('email');
   const r = await api('/me');
@@ -632,6 +640,7 @@ function doLogout(silent){
   location.reload();
 }
 
+/* ================= REALTIME ================= */
 function connectEvents(){ver=null;lastHb=0;lastFull=Date.now();poll();}
 function schedulePoll(){
   clearTimeout(pollTimer);
@@ -706,6 +715,7 @@ async function initPushNotifications(){
   }catch(e){}
 }
 
+/* ================= CHAT LIST ================= */
 async function loadChats(){
   const r = await api('/chats');
   if(Array.isArray(r)){ chats=r; renderChats(); updateHeader(); }
@@ -769,6 +779,7 @@ $('#searchInput').addEventListener('input', e=>{
   },250);
 });
 
+/* ================= CHAT VIEW ================= */
 async function openChat(id){
   const wasOpen=!!activeId;
   activeId=id; clearComposer();
@@ -850,6 +861,7 @@ function renderPinnedBar(){
   host.querySelector('.pinned-bar').onclick = ()=>{ jumpToMessage(p.id); };
 }
 
+/* ================= RENDER MESSAGES ================= */
 function renderMessages(scroll, instant){
   const area=$('#messages');
   const nearBottom = area.scrollHeight-area.scrollTop-area.clientHeight<140;
@@ -887,6 +899,7 @@ function jumpToMessage(id){
   if(row){ row.scrollIntoView({block:'center',behavior:'smooth'}); row.classList.add('highlight'); setTimeout(()=>row.classList.remove('highlight'),1500); }
 }
 
+/* ================= CONTEXT MENU ================= */
 const ctx = $('#ctx');
 function hideCtx(){ctx.classList.add('hidden');}
 function showCtx(msg, x, y){
@@ -1024,6 +1037,7 @@ async function quickReact(m, emoji){
   }
 }
 
+/* ================= REACTIONS ================= */
 const REACTION_EMOJIS = ['❤️','👍','👎','🔥','🥰','👏','😁','🤔','🤯','😱','🎉','🤩','😢','😭','🤬','😍','💯','⚡','😎','🙏','💔','😴'];
 let reactionsBarEl = null;
 function hideReactionsBar(){ if(reactionsBarEl){reactionsBarEl.remove();reactionsBarEl=null;} }
@@ -1115,6 +1129,7 @@ function showForwardPicker(m){
   });
 }
 
+/* ================= COMPOSER ================= */
 function setComposer(mode,msg){
   composer={mode,msg};
   $('#composerBar').classList.remove('hidden');
@@ -1168,7 +1183,7 @@ async function sendMessage(){
   loadChats();
 }
 
-/* ===== ATTACHMENTS with Vercel Blob ===== */
+/* ================= ATTACHMENTS ================= */
 $('#attachBtn').innerHTML = ic('attach');
 $('#emojiBtn').innerHTML = ic('emoji');
 $('#micBtn').innerHTML = ic('mic');
@@ -1214,14 +1229,11 @@ $('#attachBtn').onclick = ()=>{
   });
 };
 
-/* Upload to Vercel Blob via presigned URL from our API */
 async function uploadToBlob(file){
   showUploadBar(file.name);
   try {
-    // 1) Ask backend for upload token (direct browser → blob)
     const r = await api('/blob/upload', { method:'POST', body:{ name: file.name, size: file.size, type: file.type||'application/octet-stream' }});
     if(!r.success) throw new Error(r.message||'Cannot get upload token');
-    // 2) PUT file to Vercel Blob (client upload)
     const res = await fetch(r.uploadUrl, {
       method: 'PUT',
       headers: { 'Content-Type': file.type||'application/octet-stream', 'x-content-type': file.type||'application/octet-stream' },
@@ -1257,7 +1269,7 @@ async function sendMedia(type, mediaUrl, text, fileName){
   msgs.push(r.message); renderMessages(true); loadChats();
 }
 
-/* ===== VOICE ===== */
+/* ================= VOICE ================= */
 let mediaRecorder = null, recChunks = [], recStartTime = 0, recTimerInterval = null;
 $('#micBtn').onclick = async ()=>{
   if(mediaRecorder && mediaRecorder.state==='recording') return;
@@ -1308,7 +1320,7 @@ function openRecOverlay(){
 }
 function closeRecOverlay(){ const el = $('#recOverlay'); if(el) el.remove(); clearInterval(recTimerInterval); }
 
-/* ===== EMOJI PICKER ===== */
+/* ================= EMOJI PICKER ================= */
 $('#emojiBtn').onclick = ()=>{
   const host=$('#emojiHost');
   if(host.firstChild){host.innerHTML='';return;}
@@ -1476,7 +1488,6 @@ function openProfileModal(user, isMe){
       const i=blocked.indexOf(user.id);
       if(i>-1) blocked.splice(i,1); else blocked.push(user.id);
       saveBlocked();
-      // Tell backend
       api('/users/block',{method:'POST',body:{userId:user.id,blocked:blockedSet.has(user.id)}});
       toast(blockedSet.has(user.id)?'Blocked':'Unblocked');
       closeIt(); return;
