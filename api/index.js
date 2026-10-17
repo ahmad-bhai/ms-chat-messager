@@ -1,9 +1,6 @@
 'use strict';
 const crypto = require('crypto');
 
-let blobSdk = null;
-try { blobSdk = require('@vercel/blob'); } catch (e) { /* optional */ }
-
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || process.env.REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || process.env.REDIS_REST_TOKEN;
 const SECRET = process.env.AUTH_SECRET || crypto.createHash('sha256').update('ms-chat|' + (REDIS_TOKEN || 'dev')).digest('hex');
@@ -117,7 +114,7 @@ async function route(req, res) {
       if (REDIS_URL && REDIS_TOKEN) { await cmd('PING'); dbOk = true; }
       else err = 'Missing Redis env vars. Vercel → Storage → Connect Upstash Redis.';
     } catch (e) { err = String(e.message || e); }
-    return send(res, dbOk ? 200 : 500, { ok: dbOk, db: dbOk, blob: !!blobSdk && !!process.env.BLOB_READ_WRITE_TOKEN, error: err });
+    return send(res, dbOk ? 200 : 500, { ok: dbOk, db: dbOk, error: err });
   }
 
   if (m === 'POST' && p === 'auth/check-email') {
@@ -391,7 +388,7 @@ async function route(req, res) {
     const b = await body(req);
     const chat = await getChat(b.chatId, me);
     const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
-    const type = ['text', 'image', 'video', 'audio', 'file'].includes(b.type) ? b.type : 'text';
+    const type = ['text','image','video','audio','file'].includes(b.type) ? b.type : 'text';
     const mediaUrl = typeof b.mediaUrl === 'string' && b.mediaUrl.length < 2000 ? b.mediaUrl : '';
     if (!text && !mediaUrl) throw E(400, 'Empty message');
     const other = chat.members.find(i => i !== me) || me;
@@ -501,37 +498,10 @@ async function route(req, res) {
     return send(res, 200, { success: true, blocked: enabled });
   }
 
-  if (m === 'POST' && p === 'blob/upload') {
-    if (!blobSdk) throw E(500, 'Vercel Blob not configured. Add @vercel/blob + BLOB_READ_WRITE_TOKEN.');
-    const b = await body(req);
-    const name = clean(b.name, 200) || 'file';
-    const type = clean(b.type, 100) || 'application/octet-stream';
-    if (typeof blobSdk.handleUpload === 'function') {
-      try {
-        const result = await blobSdk.handleUpload({
-          token: process.env.BLOB_READ_WRITE_TOKEN,
-          request: req,
-          body: { name, type, size: Number(b.size) || 0 }
-        });
-        return send(res, 200, result);
-      } catch (e) {
-        // Fallback below
-      }
-    }
-    // Fallback: use put() with data payload (only for small files)
-    if (typeof blobSdk.put === 'function' && b.data) {
-      const buf = Buffer.from(b.data, 'base64');
-      const blob = await blobSdk.put(name, buf, { access: 'public', contentType: type });
-      return send(res, 200, { success: true, url: blob.url, publicUrl: blob.url });
-    }
-    throw E(500, 'Blob upload failed');
-  }
-
   throw E(404, 'Not found: ' + p);
 }
 
 module.exports = async function handler(req, res) {
-  // CORS for safety
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
