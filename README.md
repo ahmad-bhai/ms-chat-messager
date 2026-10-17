@@ -1,17 +1,35 @@
-# MS Chat (Vercel version)
+# MS Chat
 
-Telegram-style installable chat app (PWA).
-- Frontend: `index.html`, `style.css`, `app.js`, `sw.js`, `manifest.json`, icons (all in repo root)
-- Backend: `api/index.js` (one Vercel serverless function)
-- Database: Upstash Redis (free)
+A Telegram-inspired messenger with Apple emojis, voice notes, file sharing up to 600 MB, reactions, and PWA support.
 
-## Deploy
-1. Upload ALL files to a GitHub repo. The `api` folder must stay as `api/index.js`.
-2. Vercel -> Add New Project -> import the repo. Framework: "Other". No build command.
-3. In the Vercel project: Storage -> Create/Connect **Upstash Redis** (free plan). This adds the
-   `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_*`) environment variables.
-4. Redeploy (Deployments -> Redeploy). Open `https://YOUR-PROJECT.vercel.app/api/health`
-   - it must show `{"ok":true,"db":true}`.
-5. Open the site in Chrome on Android -> menu -> Install app.
+## Features
 
-Optional: set `AUTH_SECRET` (any long random text) in Environment Variables.
+- ✅ Apple/Telegram emojis (via iamcal/emoji-data)
+- ✅ Photo, video, voice, audio, file sharing (Vercel Blob — up to 600 MB)
+- ✅ Message reactions (double-tap + long-press)
+- ✅ Reply, edit, delete, pin, forward messages
+- ✅ Chat pin, mute, clear, delete
+- ✅ Profile view, block, mute, custom contact names
+- ✅ Side panel with accounts (max 5), contacts, settings
+- ✅ Two-step PIN, password change, email change, forgot password
+- ✅ Wallpaper picker (preset + upload + URL)
+- ✅ In-app link viewer (external links open in app)
+- ✅ Direct link: `/username` opens chat
+- ✅ Notifications (sound + FCM push optional)
+- ✅ PWA installable
+
+## Tech Stack
+
+- **Frontend**: Vanilla JS + HTML + CSS (single file)
+- **Backend**: Vercel Serverless Function (`api/index.js`)
+- **Database**: Upstash Redis (REST API)
+- **File Storage**: Vercel Blob
+- **Push**: Firebase Cloud Messaging (optional)
+
+## Setup
+
+### 1. Clone Repo
+
+```bash
+git clone https://github.com/YOUR_USERNAME/ms-chat-messengersss.git
+cd ms-chat-messengersss
