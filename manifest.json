@@ -1,15 +1,21 @@
 {
-  "name": "MS Chat",
-  "short_name": "MS Chat",
-  "description": "Fast and secure messenger",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "background_color": "#17212b",
-  "theme_color": "#17212b",
-  "orientation": "portrait",
-  "icons": [
-    { "src": "https://ms-chat-messager.vercel.app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "https://ms-chat-messager.vercel.app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.js" }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    }
   ]
 }
