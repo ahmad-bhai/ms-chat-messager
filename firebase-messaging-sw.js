@@ -9,14 +9,17 @@ firebase.initializeApp({
   messagingSenderId: "34240289213",
   appId: "1:34240289213:web:d9f18bcfa824bbac5e1ad4"
 });
-const messaging = firebase.messaging();
-messaging.onBackgroundMessage(payload => {
-  const n = payload.notification || {};
-  self.registration.showNotification(n.title || 'MS Chat', {
-    body: n.body || '',
-    icon: 'https://ms-chat-messager.vercel.app/icon-512.png',
-    badge: 'https://ms-chat-messager.vercel.app/icon-512.png',
-    data: payload.data || {},
-    tag: (payload.data && payload.data.chatId) || 'ms-chat'
+
+try {
+  const messaging = firebase.messaging();
+  messaging.onBackgroundMessage(payload => {
+    const n = payload.notification || {};
+    self.registration.showNotification(n.title || 'MS Chat', {
+      body: n.body || '',
+      icon: 'https://ms-chat-messager.vercel.app/icon-512.png',
+      badge: 'https://ms-chat-messager.vercel.app/icon-512.png',
+      data: payload.data || {},
+      tag: (payload.data && payload.data.chatId) || 'ms-chat'
+    });
   });
-});
+} catch (e) { /* FCM optional */ }
