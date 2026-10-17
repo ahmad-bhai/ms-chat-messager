@@ -6,7 +6,10 @@
   "background_color": "#17212b",
   "theme_color": "#17212b",
   "icons": [
-    { "src": "https://ms-chat-messager.vercel.app/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "https://ms-chat-messager.vercel.app/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "https://magic-scripts-emojis.vercel.app/emoji/?id=%F0%9F%92%AC",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
