@@ -5,12 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>MS Chat</title>
 <meta name="theme-color" content="#17212b" id="metaTheme">
-<meta name="description" content="MS Chat - fast and secure messenger">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" sizes="512x512" href="https://ms-chat-messager.vercel.app/icon-512.png">
-<link rel="apple-touch-icon" href="https://ms-chat-messager.vercel.app/icon-512.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root{
   --sidebar:#17212b; --chat-bg:#0e1621; --head:#17212b; --hover:#202b36; --active:#2b5278;
@@ -58,7 +54,6 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 .primary:disabled{opacity:.6}
 .link{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.4px;padding:14px;width:100%}
 .link.danger{color:var(--danger)}
-
 /* Layout */
 #app{display:flex;height:100vh;height:100dvh;width:100%;position:relative;overflow:hidden}
 .sidebar{width:380px;max-width:42%;min-width:300px;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
@@ -159,10 +154,6 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 .attach-btn{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text2);flex-shrink:0}
 .attach-btn:hover{background:var(--hover)}
 
-.upload-bar{position:fixed;top:8px;left:50%;transform:translateX(-50%);background:var(--sidebar);border-radius:12px;padding:8px 16px;box-shadow:var(--shadow);z-index:500;display:flex;align-items:center;gap:10px;font-size:13px;min-width:280px;max-width:90%}
-.upload-bar .bar{flex:1;height:6px;background:var(--input);border-radius:3px;overflow:hidden}
-.upload-bar .bar>i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
-
 .ctx{position:fixed;z-index:200;background:var(--sidebar);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:190px;animation:pop .1s ease-out}
 [data-theme="dark"] .ctx{background:#1e2c3a}
 .ctx button{display:flex;gap:14px;align-items:center;width:100%;padding:10px 12px;border-radius:8px;text-align:left;font-size:15px}
@@ -199,6 +190,7 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:170;opacity:0;pointer-events:none;transition:opacity .25s}
 .overlay.show{opacity:1;pointer-events:auto}
 
+/* Modals & Dialogs */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px}
 .sheet{background:var(--sidebar);width:100%;max-width:460px;max-height:92vh;max-height:92dvh;border-radius:16px;display:flex;flex-direction:column;box-shadow:var(--shadow);overflow:hidden}
 .sheet-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
@@ -222,6 +214,18 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 .select-input{background:var(--input);color:var(--text);border:none;padding:6px 10px;border-radius:8px;font-size:14px}
 .slider{width:140px}
 .divider{height:1px;background:var(--border);margin:14px 0}
+
+/* Custom Dialog (replaces alert/confirm) */
+.dialog{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s}
+.dialog-box{background:var(--sidebar);width:100%;max-width:340px;border-radius:14px;overflow:hidden;box-shadow:var(--shadow);animation:pop .15s}
+.dialog-title{font-size:18px;font-weight:600;text-align:center;padding:20px 20px 8px}
+.dialog-msg{font-size:14px;color:var(--text2);text-align:center;padding:0 20px 20px;line-height:1.4}
+.dialog-actions{display:flex;border-top:1px solid var(--border)}
+.dialog-actions button{flex:1;padding:14px;font-size:15px;font-weight:600;color:var(--accent);transition:background .15s}
+.dialog-actions button:hover{background:var(--hover)}
+.dialog-actions button.danger{color:var(--danger)}
+.dialog-actions button+button{border-left:1px solid var(--border)}
+.dialog-input{width:100%;height:44px;background:var(--input);border:none;border-radius:8px;padding:0 12px;font-size:15px;margin:0 20px 20px;width:calc(100% - 40px);outline:none}
 
 #toast{position:fixed;left:50%;bottom:calc(30px + env(safe-area-inset-bottom));transform:translate(-50%,30px);background:rgba(20,20,20,.92);color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:300;max-width:90%;text-align:center}
 #toast.show{opacity:1;transform:translate(-50%,0)}
@@ -369,11 +373,10 @@ img.emoji.big{width:56px;height:56px;vertical-align:middle}
 </div>
 
 <div id="modalHost"></div>
+<div id="dialogHost"></div>
 <div id="ctx" class="ctx hidden"></div>
 <div id="toast"></div>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script>
 (() => {
 'use strict';
@@ -443,8 +446,34 @@ let toastTimer;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
 const isMobile = () => window.matchMedia('(max-width:760px)').matches;
 
-/* ================= EMOJIS ================= */
-/* GitHub iamcal/emoji-data (Apple) */
+/* ================= CUSTOM DIALOG (Replaces alert/confirm/prompt) ================= */
+function showDialog({title, msg, input, danger, okText='OK', cancelText='Cancel'}) {
+  return new Promise(resolve => {
+    const host = $('#dialogHost');
+    host.innerHTML = `
+      <div class="dialog">
+        <div class="dialog-box">
+          <div class="dialog-title">${esc(title)}</div>
+          ${msg?`<div class="dialog-msg">${esc(msg)}</div>`:''}
+          ${input?`<input class="dialog-input" id="dlgInput" value="${esc(input.defaultValue||'')}" placeholder="${esc(input.placeholder||'')}">`:''}
+          <div class="dialog-actions">
+            ${cancelText?`<button id="dlgCancel">${esc(cancelText)}</button>`:''}
+            <button id="dlgOk" class="${danger?'danger':''}">${esc(okText)}</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = (val) => { host.innerHTML = ''; resolve(val); };
+    if(input) setTimeout(()=>$('#dlgInput').focus(), 50);
+    $('#dlgOk').onclick = () => close(input ? $('#dlgInput').value : true);
+    if(cancelText) $('#dlgCancel').onclick = () => close(null);
+  });
+}
+const myAlert = (title, msg) => showDialog({ title, msg, cancelText: null, okText: 'OK' });
+const myConfirm = (title, msg, danger=true) => showDialog({ title, msg, danger, okText: 'Yes', cancelText: 'Cancel' });
+const myPrompt = (title, defaultValue='', placeholder='') => showDialog({ title, input: {defaultValue, placeholder}, okText: 'Save' });
+
+/* ================= EMOJI ENGINE ================= */
 const EMOJI_BASE = 'https://raw.githubusercontent.com/iamcal/emoji-data/master/img-apple-64/';
 function emojiToCode(ch){
   const cps=[];
@@ -453,7 +482,7 @@ function emojiToCode(ch){
 }
 function emojiImg(emoji, cls=''){
   const code = emojiToCode(emoji);
-  return `<img class="emoji ${cls}" src="${EMOJI_BASE}${code}.png" alt="${esc(emoji)}" loading="lazy" onerror="this.style.display='none'">`;
+  return `<img class="emoji ${cls}" src="${EMOJI_BASE}${code}.png" alt="${emoji}" loading="lazy">`;
 }
 function hasEmoji(str){return /\p{Extended_Pictographic}/u.test(str);}
 function countEmoji(str){const m = str.match(/\p{Extended_Pictographic}(\u200d\p{Extended_Pictographic})*/gu);return m?m.length:0;}
@@ -465,7 +494,7 @@ function isOnlyEmoji(str){
   return countEmoji(trimmed) <= 3;
 }
 
-/* IMPORTANT FIX: Escape FIRST, then replace emojis, then linkify */
+/* Renders text: escape HTML → convert emojis → linkify @, /, http */
 function renderBody(text){
   if(text==null) return '';
   const bigEmoji = isOnlyEmoji(text);
@@ -599,7 +628,7 @@ $('#authForm').addEventListener('submit', async e=>{
     } else if(step==='forgot'){
       const email = savedEmail || $('#email').value.trim().toLowerCase();
       const r = await api('/auth/forgot',{method:'POST',body:{email},noLogout:true});
-      toast(r.message || 'Reset email sent (check inbox)');
+      myAlert('Reset Sent', 'If the email exists, reset instructions were sent.');
       showStep('email');
     }
   } finally { btn.disabled=false; }
@@ -954,7 +983,7 @@ ctx.addEventListener('click', async e=>{
     }
     if(a==='forward'){ showForwardPicker(m); }
     if(a==='delete'){
-      if(!confirm('Delete this message for everyone?')) return;
+      if(!await myConfirm('Delete Message', 'Delete this message for everyone?', true)) return;
       const r=await api('/messages/'+m.id,{method:'DELETE'});
       if(!r.success) toast(r.message||'Failed');
       else { msgs=msgs.filter(x=>x.id!==m.id); renderMessages(false); renderPinnedBar(); loadChats(); }
@@ -970,16 +999,19 @@ ctx.addEventListener('click', async e=>{
     if(a==='goto-first'){ if(msgs[0]) jumpToMessage(msgs[0].id); return; }
     if(a==='clear-chat'||a==='delete-chat'){
       const c = chats.find(x=>x.id===chatId); if(!c) return;
-      const both = confirm('OK = delete for both sides · Cancel = only for me');
       if(a==='clear-chat'){
-        if(both){ await api('/chats/clear/'+chatId,{method:'DELETE'}); }
-        else { msgCache[chatId]=[]; if(chatId===activeId){msgs=[];renderMessages(false);renderPinnedBar();} }
-        toast('History cleared');
+        if(await myConfirm('Clear History', 'Delete all messages for both sides?', true)){
+          await api('/chats/clear/'+chatId,{method:'DELETE'});
+          msgCache[chatId]=[]; if(chatId===activeId){msgs=[];renderMessages(false);renderPinnedBar();}
+          toast('History cleared');
+        }
       } else {
-        if(both){ await api('/chats/clear/'+chatId,{method:'DELETE'}); }
-        chats = chats.filter(x=>x.id!==chatId);
-        if(chatId===activeId) closeChat();
-        renderChats();
+        if(await myConfirm('Delete Chat', 'Delete this chat for both sides?', true)){
+          await api('/chats/clear/'+chatId,{method:'DELETE'});
+          chats = chats.filter(x=>x.id!==chatId);
+          if(chatId===activeId) closeChat();
+          renderChats();
+        }
       }
       return;
     }
@@ -1192,8 +1224,6 @@ $('#headSearchBtn').innerHTML = ic('search',22);
 $('#chatMenuBtn').innerHTML = ic('more');
 $('#msgSearchClose').innerHTML = ic('close',20);
 
-const MAX_FILE = 600 * 1024 * 1024;
-
 $('#attachBtn').onclick = ()=>{
   const host = $('#attachHost');
   if(host.firstChild){host.innerHTML='';return;}
@@ -1219,47 +1249,49 @@ $('#attachBtn').onclick = ()=>{
     if(t==='audio') inp.accept='audio/*';
     inp.onchange=async()=>{
       const f=inp.files[0]; if(!f) return;
-      if(f.size > MAX_FILE){ toast('File too large (max 600 MB)'); return; }
-      try {
-        const url = await uploadToBlob(f);
-        if(url) await sendMedia(t, url, '', f.name);
-      } catch(e){ toast('Upload failed: '+e.message); }
+      if(f.size > 600*1024*1024){ return toast('File too large (max 600 MB)'); }
+      
+      if(t === 'image'){
+        try {
+          // Compress image before upload
+          const dataUrl = await compressImage(f, 1200, 0.8);
+          await sendMedia('image', dataUrl, '', f.name);
+        } catch(e) { toast('Image failed: '+e.message); }
+      } else {
+        toast('Server storage is not configured for large files. Please use images only.');
+        // NOTE: Yahan server API chahiye hoti hai (S3 / Vercel Blob) jo abhi available nahi hai.
+      }
     };
     inp.click();
   });
 };
 
-async function uploadToBlob(file){
-  showUploadBar(file.name);
-  try {
-    const r = await api('/blob/upload', { method:'POST', body:{ name: file.name, size: file.size, type: file.type||'application/octet-stream' }});
-    if(!r.success) throw new Error(r.message||'Cannot get upload token');
-    const res = await fetch(r.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type||'application/octet-stream', 'x-content-type': file.type||'application/octet-stream' },
-      body: file
-    });
-    if(!res.ok) throw new Error('Upload failed ('+res.status+')');
-    const data = await res.json();
-    hideUploadBar();
-    return data.url || r.publicUrl;
-  } catch(e){
-    hideUploadBar();
-    throw e;
-  }
+function compressImage(file, maxWidth, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = event => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
+  });
 }
-
-function showUploadBar(name){
-  let el = $('#uploadBar');
-  if(!el){ el = document.createElement('div'); el.id='uploadBar'; el.className='upload-bar';
-    el.innerHTML = `<span class="uname"></span><div class="bar"><i></i></div><span class="pct">0%</span>`;
-    document.body.appendChild(el);
-  }
-  el.querySelector('.uname').textContent = name.length>20 ? name.slice(0,17)+'...' : name;
-  el.querySelector('.bar>i').style.width = '100%';
-  el.querySelector('.pct').textContent = '↑';
-}
-function hideUploadBar(){ const el = $('#uploadBar'); if(el) el.remove(); }
 
 async function sendMedia(type, mediaUrl, text, fileName){
   if(!activeId) return;
@@ -1268,57 +1300,6 @@ async function sendMedia(type, mediaUrl, text, fileName){
   if(!r.success) return toast(r.message||'Failed to send');
   msgs.push(r.message); renderMessages(true); loadChats();
 }
-
-/* ================= VOICE ================= */
-let mediaRecorder = null, recChunks = [], recStartTime = 0, recTimerInterval = null;
-$('#micBtn').onclick = async ()=>{
-  if(mediaRecorder && mediaRecorder.state==='recording') return;
-  let stream;
-  try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
-  catch(e){ toast('Microphone access denied'); return; }
-  recChunks = [];
-  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
-  mediaRecorder = mime ? new MediaRecorder(stream, {mimeType:mime}) : new MediaRecorder(stream);
-  mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) recChunks.push(e.data); };
-  mediaRecorder.onstop = async ()=>{
-    stream.getTracks().forEach(t=>t.stop());
-    const blob = new Blob(recChunks, {type: recChunks[0]?.type || 'audio/webm'});
-    closeRecOverlay();
-    const duration = Math.round((Date.now()-recStartTime)/1000);
-    if(duration < 1){ toast('Hold longer to record'); return; }
-    try {
-      const url = await uploadToBlob(new File([blob], 'voice-'+Date.now()+'.webm', {type: blob.type}));
-      if(url) await sendMedia('audio', url, '', 'voice.webm');
-    } catch(e){ toast('Upload failed: '+e.message); }
-  };
-  mediaRecorder.start();
-  recStartTime = Date.now();
-  openRecOverlay();
-};
-function openRecOverlay(){
-  closeRecOverlay();
-  const el = document.createElement('div'); el.className='rec-overlay'; el.id='recOverlay';
-  el.innerHTML = `
-    <div class="rec-time-big" id="recTimeBig">0:00</div>
-    <div class="rec-wave">${Array.from({length:40}).map((_,i)=>`<span style="animation-delay:${(i%10)*0.1}s"></span>`).join('')}</div>
-    <div class="rec-btns">
-      <button class="rec-del" id="recCancel">${ic('trash',26)}</button>
-      <button class="rec-send" id="recSend">${ic('send',26)}</button>
-    </div>`;
-  document.body.appendChild(el);
-  const start = Date.now();
-  recTimerInterval = setInterval(()=>{
-    const s = Math.floor((Date.now()-start)/1000);
-    $('#recTimeBig').textContent = Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
-  },200);
-  $('#recCancel').onclick = ()=>{
-    if(mediaRecorder && mediaRecorder.state==='recording'){ mediaRecorder.ondataavailable=null; mediaRecorder.onstop=null; mediaRecorder.stop(); }
-    if(mediaRecorder) mediaRecorder.stream.getTracks().forEach(t=>t.stop());
-    closeRecOverlay();
-  };
-  $('#recSend').onclick = ()=>{ if(mediaRecorder && mediaRecorder.state==='recording') mediaRecorder.stop(); };
-}
-function closeRecOverlay(){ const el = $('#recOverlay'); if(el) el.remove(); clearInterval(recTimerInterval); }
 
 /* ================= EMOJI PICKER ================= */
 $('#emojiBtn').onclick = ()=>{
@@ -1494,9 +1475,9 @@ function openProfileModal(user, isMe){
     }
     if(e.target.closest('[data-mute]')){ const i=muted.indexOf(user.id); if(i>-1) muted.splice(i,1); else muted.push(user.id); saveMuted(); toast(mutedSet.has(user.id)?'Muted':'Unmuted'); renderChats(); closeIt(); return; }
     if(e.target.closest('[data-editcontact]')){
-      const name = prompt('Custom name for '+user.firstName, (chatMeta[user.id]||{}).customName||user.firstName);
+      const name = await myPrompt('Edit contact name', (chatMeta[user.id]||{}).customName||user.firstName);
       if(name===null) return;
-      const photo = prompt('Custom photo URL (blank = remove)', (chatMeta[user.id]||{}).customPhoto||'');
+      const photo = await myPrompt('Custom photo URL (leave blank to remove)', (chatMeta[user.id]||{}).customPhoto||'');
       chatMeta[user.id] = {customName:name||'', customPhoto:photo||''};
       saveChatMeta(); renderChats(); updateHeader();
       closeIt(); return;
@@ -1616,8 +1597,8 @@ function openSettings(){
       };
       inp.click(); return;
     }
-    if(a==='wpUrl'){ const url = prompt('Enter wallpaper URL:'); if(!url) return; settings.wallpaper = url; saveSettings(); applySettings(); toast('Wallpaper set'); closeIt(); return; }
-    if(e.target.closest('#setLogout')){ if(confirm('Log out?')) doLogout(); }
+    if(a==='wpUrl'){ const url = await myPrompt('Enter wallpaper URL:'); if(!url) return; settings.wallpaper = url; saveSettings(); applySettings(); toast('Wallpaper set'); closeIt(); return; }
+    if(e.target.closest('#setLogout')){ if(await myConfirm('Log out', 'Are you sure you want to log out?')) doLogout(); }
   });
   $('#setAvatar').onclick = ()=>{
     const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
