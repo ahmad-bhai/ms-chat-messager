@@ -3,10 +3,12 @@
         AUTH_SECRET, RESEND_API_KEY (+MAIL_FROM) for email codes, OTP_DEBUG=1 (dev only) */
 const crypto = require('crypto');
 const { Redis } = require('@upstash/redis');
+
 const r = new Redis({
   url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
 });
+
 const SECRET = process.env.AUTH_SECRET || 'ms-chat-secret';
 const now = () => Date.now();
 const rid = () => crypto.randomBytes(24).toString('hex');
@@ -52,12 +54,14 @@ function status(u, seen, blocked, vid) {
   if (!u.hideSeen) return 'ts:' + seen;
   return 'last seen ' + (a < 7 * d ? 'recently' : a < 30 * d ? 'within a week' : a < 365 * d ? 'within a month' : a < 730 * d ? 'within a year' : 'a long time ago');
 }
+
 async function pub(u, vid) {
   if (!u) return null;
   const blocked = await isBlk(u.id, vid);
   const seen = (await r.get('seen:' + u.id)) || 0;
   return { id: u.id, name: u.name, username: u.username, bio: u.bio || '', dob: u.dob || '', avatar: blocked ? '' : u.avatar || '', status: status(u, seen, blocked, vid) };
 }
+
 const own = u => ({ id: u.id, email: u.email, name: u.name, username: u.username, bio: u.bio || '', dob: u.dob || '', avatar: u.avatar || '', hideSeen: !!u.hideSeen, two: !!(u.sec && u.sec.two), pass: !!(u.sec && u.sec.pass) });
 
 async function newSession(uid, req) {
@@ -66,6 +70,7 @@ async function newSession(uid, req) {
   await r.sadd('us:' + uid, sid);
   return sid;
 }
+
 async function auth(req) {
   const t = (req.headers.authorization || '').slice(7);
   if (!t) return null;
@@ -81,6 +86,7 @@ async function bump(chat, m) {
   await r.hset('mh:' + chat, { [m.id]: m });
   for (const u of parts(chat)) await r.zadd('uf:' + u, { score: v, member: chat + '|' + m.id });
 }
+
 async function touch(u, chat) {
   await r.zadd('uf:' + u, { score: await ver(), member: chat + '|0' });
 }
@@ -135,10 +141,11 @@ async function markRead(uid, chat) {
   if (p !== uid) await touch(p, chat);
   return { ok: true };
 }
+
 const allMsgs = async chat => (await r.hgetall('mh:' + chat)) || {};
 const getMsg = async (c, b) => (can(c.uid, b.chat) ? r.hget('mh:' + b.chat, b.id) : null);
 
-const A = {};
+/* ---------- Public Auth Handlers ---------- */
 const open = {
   async '/auth/register'(req, b) {
     const email = String(b.email || '').trim().toLowerCase();
@@ -167,7 +174,11 @@ const open = {
   }
 };
 
+/* ---------- Authenticated Handlers ---------- */
+const A = {};
+
 A['/me'] = async c => ({ me: own(await r.get('user:' + c.uid)) });
+
 A['/me/update'] = async (c, b) => {
   const u = await r.get('user:' + c.uid);
   if (b.name !== undefined) { u.name = String(b.name).trim().slice(0, 40); if (!u.name) return { err: 'Name required' }; }
@@ -196,6 +207,7 @@ A['/me/update'] = async (c, b) => {
   await r.set('user:' + c.uid, u);
   return { me: own(u) };
 };
+
 A['/user'] = async (c, b, q) => {
   const k = String(q.u || '').replace(/^@/, '');
   const id = /^\d{10}$/.test(k) ? k : await r.get('uname:' + k.toLowerCase());
@@ -221,6 +233,7 @@ A['/chats'] = async c => {
   }));
   return { chats: out.filter(Boolean), v: +(await r.get('ver')) || 0 };
 };
+
 A['/msgs'] = async (c, b, q) => {
   const chat = q.chat;
   if (!can(c.uid, chat)) return { err: 'forbidden' };
@@ -232,6 +245,7 @@ A['/msgs'] = async (c, b, q) => {
   const pins = list.filter(m => (m.pin || []).includes(c.uid));
   return { msgs: list.slice(from, from + 120), pin: pins.length ? pins[pins.length - 1] : null, rd: +(await r.get(`rd:${chat}:${peerOf(chat, c.uid)}`)) || 0 };
 };
+
 A['/updates'] = async (c, b, q) => {
   const after = +q.after || 0;
   const v = +(await r.get('ver')) || 0;
@@ -249,9 +263,11 @@ A['/updates'] = async (c, b, q) => {
   }
   return { v, items };
 };
+
 A['/open'] = async (c, b) => ({ chat: pairId(c.uid, String(b.peerId)) });
 A['/send'] = (c, b) => send(c.uid, b);
 A['/read'] = (c, b) => markRead(c.uid, b.chat);
+
 A['/edit'] = async (c, b) => {
   const m = await getMsg(c, b);
   if (!m || m.from !== c.uid || m.dead) return { err: 'cannot edit' };
@@ -259,6 +275,7 @@ A['/edit'] = async (c, b) => {
   await bump(b.chat, m);
   return { ok: true, msg: m };
 };
+
 A['/delete'] = async (c, b) => {
   const m = await getMsg(c, b);
   if (!m) return { err: 'not found' };
@@ -266,6 +283,7 @@ A['/delete'] = async (c, b) => {
   await bump(b.chat, m);
   return { ok: true };
 };
+
 A['/pin'] = async (c, b) => {
   const m = await getMsg(c, b);
   if (!m) return { err: 'not found' };
@@ -274,6 +292,7 @@ A['/pin'] = async (c, b) => {
   await bump(b.chat, m);
   return { ok: true };
 };
+
 A['/react'] = async (c, b) => {
   const m = await getMsg(c, b);
   if (!m) return { err: 'not found' };
@@ -282,17 +301,20 @@ A['/react'] = async (c, b) => {
   await bump(b.chat, m);
   return { ok: true, msg: m };
 };
+
 A['/chat/mute'] = async (c, b) => {
   if (!can(c.uid, b.chat)) return { err: 'forbidden' };
   const m = await getM(c.uid, b.chat); m.mute = +b.until || 0;
   await setM(c.uid, b.chat, m);
   return { ok: true };
 };
+
 A['/chat/clear'] = async (c, b) => {
   if (!can(c.uid, b.chat)) return { err: 'forbidden' };
   for (const u of b.both ? parts(b.chat) : [c.uid]) { const m = await getM(u, b.chat); m.clr = now(); await setM(u, b.chat, m); if (u !== c.uid) await touch(u, b.chat); }
   return { ok: true };
 };
+
 A['/chat/delete'] = async (c, b) => {
   if (!can(c.uid, b.chat)) return { err: 'forbidden' };
   for (const u of b.both ? parts(b.chat) : [c.uid]) {
@@ -302,6 +324,7 @@ A['/chat/delete'] = async (c, b) => {
   }
   return { ok: true };
 };
+
 A['/search'] = async (c, b, q) => {
   const s = String(q.q || '').trim().toLowerCase();
   if (!s) return { msgs: [], users: [], chats: [] };
@@ -324,6 +347,7 @@ A['/blocked'] = async c => {
   const ids = await r.smembers('bl:' + c.uid);
   return { users: (await Promise.all(ids.map(async i => pub(await r.get('user:' + i), c.uid)))).filter(Boolean) };
 };
+
 A['/contact'] = async (c, b) => {
   if (b.del) await r.hdel('ct:' + c.uid, String(b.peer));
   else await r.hset('ct:' + c.uid, { [String(b.peer)]: String(b.name || '').slice(0, 40) });
@@ -339,16 +363,19 @@ A['/sec/set'] = async (c, b) => {
   await r.set('user:' + c.uid, u);
   return { ok: true };
 };
+
 A['/sec/remove'] = async (c, b) => {
   const u = await r.get('user:' + c.uid), k = kind(b);
   if (!u.sec || !u.sec[k] || hs(b.value || '', c.uid) !== u.sec[k]) return { err: 'Wrong value' };
   delete u.sec[k]; await r.set('user:' + c.uid, u);
   return { ok: true };
 };
+
 A['/sec/verify'] = async (c, b) => {
   const u = await r.get('user:' + c.uid), k = kind(b);
   return { ok: !!(u.sec && u.sec[k] && hs(b.value || '', c.uid) === u.sec[k]) };
 };
+
 A['/devices'] = async c => {
   const out = [];
   for (const sid of await r.smembers('us:' + c.uid)) {
@@ -357,12 +384,15 @@ A['/devices'] = async c => {
   }
   return { devices: out };
 };
+
 A['/devices/logout'] = async (c, b) => {
   if (!(await r.sismember('us:' + c.uid, b.id))) return { err: 'not found' };
   await r.del('sess:' + b.id); await r.srem('us:' + c.uid, b.id);
   return { ok: true };
 };
+
 A['/auth/logout'] = async c => { await r.del('sess:' + c.sid); await r.srem('us:' + c.uid, c.sid); return { ok: true }; };
+
 A['/account/delete-start'] = async c => {
   const u = await r.get('user:' + c.uid);
   if (!(u.sec && (u.sec.two || u.sec.pass))) return { err: 'setup2fa' };
@@ -372,6 +402,7 @@ A['/account/delete-start'] = async c => {
   if (!sent && process.env.OTP_DEBUG !== '1') return { err: 'Email service not configured (set RESEND_API_KEY)' };
   return { ok: true, need: { two: !!u.sec.two, pass: !!u.sec.pass }, debug: !sent ? code : undefined };
 };
+
 A['/account/delete-confirm'] = async (c, b) => {
   const u = await r.get('user:' + c.uid), o = await r.get('otp:' + c.uid);
   if (!o || o.exp < now() || hs(String(b.code || ''), c.uid) !== o.code) return { err: 'Wrong or expired email code' };
