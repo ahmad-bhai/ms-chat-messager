@@ -1,6 +1,6 @@
-/* MS Chat - api/index.js (Vercel Serverless Function, CommonJS)
+/* MS Chat - api/index.js (single Vercel serverless function, CommonJS)
    Env: KV_REST_API_URL/TOKEN (Upstash), BLOB_READ_WRITE_TOKEN, FIREBASE_SERVICE_ACCOUNT,
-        AUTH_SECRET, RESEND_API_KEY (+MAIL_FROM), OTP_DEBUG=1 (dev mode) */
+        AUTH_SECRET, RESEND_API_KEY (+MAIL_FROM) for email codes, OTP_DEBUG=1 (dev only) */
 const crypto = require('crypto');
 const { Redis } = require('@upstash/redis');
 
@@ -9,7 +9,7 @@ const r = new Redis({
   token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
 });
 
-const SECRET = process.env.AUTH_SECRET || 'ms-chat-secret-key-2026';
+const SECRET = process.env.AUTH_SECRET || 'ms-chat-secret';
 const now = () => Date.now();
 const rid = () => crypto.randomBytes(24).toString('hex');
 const hp = (p, s) => crypto.scryptSync(String(p), s, 32).toString('hex');
@@ -27,14 +27,12 @@ const isBlk = async (a, b) => a !== b && !!((await r.sismember('bl:' + a, b)) ||
 
 async function mail(to, subject, text) {
   if (!process.env.RESEND_API_KEY) return false;
-  try {
-    const x = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.MAIL_FROM || 'MS Chat <onboarding@resend.dev>', to, subject, text })
-    });
-    return x.ok;
-  } catch (e) { return false; }
+  const x = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: process.env.MAIL_FROM || 'MS Chat <onboarding@resend.dev>', to, subject, text })
+  });
+  return x.ok;
 }
 
 let adm;
@@ -54,7 +52,7 @@ function status(u, seen, blocked, vid) {
   const a = now() - seen, d = 864e5;
   if (a < 25000) return 'online';
   if (!u.hideSeen) return 'ts:' + seen;
-  return 'last seen ' + (a < 7 * d ? 'recently' : a < 30 * d ? 'within a week' : a < 365 * d ? 'within a month' : 'a long time ago');
+  return 'last seen ' + (a < 7 * d ? 'recently' : a < 30 * d ? 'within a week' : a < 365 * d ? 'within a month' : a < 730 * d ? 'within a year' : 'a long time ago');
 }
 
 async function pub(u, vid) {
@@ -108,7 +106,7 @@ async function notify(peer, from, m, chat) {
       webpush: { headers: { Urgency: 'high', TTL: '86400' } }
     });
     out.responses.forEach((x, i) => { if (!x.success && /not-registered|invalid/.test((x.error && x.error.code) || '')) r.srem('fcm:' + peer, toks[i]); });
-  } catch (e) {}
+  } catch (e) { /* push is best effort */ }
 }
 
 async function send(uid, b) {
@@ -147,7 +145,7 @@ async function markRead(uid, chat) {
 const allMsgs = async chat => (await r.hgetall('mh:' + chat)) || {};
 const getMsg = async (c, b) => (can(c.uid, b.chat) ? r.hget('mh:' + b.chat, b.id) : null);
 
-/* ---------- Public Auth & QR Routes ---------- */
+/* ---------- Public Auth Handlers ---------- */
 const open = {
   async '/auth/register'(req, b) {
     const email = String(b.email || '').trim().toLowerCase();
@@ -167,89 +165,17 @@ const open = {
     await r.set('uname:' + username.toLowerCase(), id);
     return { token: await newSession(id, req), me: own(u) };
   },
-
   async '/auth/login'(req, b) {
     const id = await r.get('email:' + String(b.email || '').trim().toLowerCase());
     const u = id && (await r.get('user:' + id));
     if (!u || hp(b.password || '', u.salt) !== u.pw) return { err: 'Wrong email or password' };
-    
-    // OTP System for Email Login
-    if (!b.otp) {
-      const code = String(crypto.randomInt(100000, 999999));
-      await r.set('login_otp:' + id, { code: hs(code, id), exp: now() + 300000 }, { ex: 300 });
-      const sent = await mail(u.email, 'MS Chat Login Verification Code', `Your OTP is: ${code} (Valid 5 minutes).`);
-      return { needOtp: true, msg: 'OTP sent to your email', debug: (!sent || process.env.OTP_DEBUG === '1') ? code : undefined };
-    }
-
-    const savedOtp = await r.get('login_otp:' + id);
-    if (!savedOtp || savedOtp.exp < now() || hs(String(b.otp), id) !== savedOtp.code) {
-      return { err: 'Invalid or expired OTP code' };
-    }
-
-    if (u.sec && u.sec.two && (!b.two || hs(b.two, id) !== u.sec.two)) {
-      return { need2fa: true, err: b.two ? 'Wrong two-step password' : undefined };
-    }
-    
-    await r.del('login_otp:' + id);
+    if (u.sec && u.sec.two && (!b.two || hs(b.two, id) !== u.sec.two)) return { need2fa: true, err: b.two ? 'Wrong two-step password' : undefined };
     return { token: await newSession(id, req), me: own(u) };
-  },
-
-  async '/auth/forgot-password'(req, b) {
-    const email = String(b.email || '').trim().toLowerCase();
-    const id = await r.get('email:' + email);
-    const u = id && (await r.get('user:' + id));
-    if (!u) return { err: 'No account with this email' };
-
-    if (!b.otp) {
-      const code = String(crypto.randomInt(100000, 999999));
-      await r.set('reset_otp:' + id, { code: hs(code, id), exp: now() + 600000 }, { ex: 600 });
-      const sent = await mail(email, 'MS Chat Password Reset Code', `Your password reset code is: ${code}`);
-      return { ok: true, needOtp: true, debug: (!sent || process.env.OTP_DEBUG === '1') ? code : undefined };
-    }
-
-    const o = await r.get('reset_otp:' + id);
-    if (!o || o.exp < now() || hs(String(b.otp), id) !== o.code) return { err: 'Wrong or expired reset code' };
-    if (!b.newPassword || String(b.newPassword).length < 6) return { err: 'Password must be at least 6 characters' };
-
-    u.pw = hp(b.newPassword, u.salt);
-    await r.set('user:' + id, u);
-    await r.del('reset_otp:' + id);
-    return { ok: true, msg: 'Password reset successful! You can login now.' };
-  },
-
-  // QR Auth Endpoints
-  async '/auth/qr-init'(req) {
-    const qid = rid();
-    await r.set('qr:' + qid, { status: 'pending', ts: now() }, { ex: 120 });
-    return { qid };
-  },
-
-  async '/auth/qr-check'(req, b, q) {
-    const qid = q.qid || b.qid;
-    const data = await r.get('qr:' + qid);
-    if (!data) return { err: 'QR Code Expired' };
-    return data;
   }
 };
 
 /* ---------- Authenticated Handlers ---------- */
 const A = {};
-
-A['/auth/qr-approve'] = async (c, b) => {
-  const qid = b.qid;
-  const qdata = await r.get('qr:' + qid);
-  if (!qdata) return { err: 'QR Session expired' };
-  const u = await r.get('user:' + c.uid);
-
-  if (u.sec && u.sec.two) {
-    if (!b.two) return { need2fa: true };
-    if (hs(b.two, c.uid) !== u.sec.two) return { err: 'Incorrect 2-Step password' };
-  }
-
-  const token = await newSession(c.uid, req);
-  await r.set('qr:' + qid, { status: 'approved', token, me: own(u) }, { ex: 60 });
-  return { ok: true };
-};
 
 A['/me'] = async c => ({ me: own(await r.get('user:' + c.uid)) });
 
@@ -467,10 +393,36 @@ A['/devices/logout'] = async (c, b) => {
 
 A['/auth/logout'] = async c => { await r.del('sess:' + c.sid); await r.srem('us:' + c.uid, c.sid); return { ok: true }; };
 
+A['/account/delete-start'] = async c => {
+  const u = await r.get('user:' + c.uid);
+  if (!(u.sec && (u.sec.two || u.sec.pass))) return { err: 'setup2fa' };
+  const code = String(crypto.randomInt(100000, 999999));
+  await r.set('otp:' + c.uid, { code: hs(code, c.uid), exp: now() + 600000 }, { ex: 600 });
+  const sent = await mail(u.email, 'MS Chat account deletion code', 'Your code: ' + code + ' (valid 10 minutes). If this was not you, ignore this email.');
+  if (!sent && process.env.OTP_DEBUG !== '1') return { err: 'Email service not configured (set RESEND_API_KEY)' };
+  return { ok: true, need: { two: !!u.sec.two, pass: !!u.sec.pass }, debug: !sent ? code : undefined };
+};
+
+A['/account/delete-confirm'] = async (c, b) => {
+  const u = await r.get('user:' + c.uid), o = await r.get('otp:' + c.uid);
+  if (!o || o.exp < now() || hs(String(b.code || ''), c.uid) !== o.code) return { err: 'Wrong or expired email code' };
+  if (u.sec.two && hs(b.two || '', c.uid) !== u.sec.two) return { err: 'Wrong two-step password' };
+  if (u.sec.pass && hs(b.pass || '', c.uid) !== u.sec.pass) return { err: 'Wrong passcode' };
+  for (const sid of await r.smembers('us:' + c.uid)) await r.del('sess:' + sid);
+  await r.del('user:' + c.uid, 'uname:' + u.username.toLowerCase(), 'email:' + u.email, 'us:' + c.uid, 'fcm:' + c.uid, 'ct:' + c.uid, 'bl:' + c.uid, 'ul:' + c.uid, 'uf:' + c.uid, 'otp:' + c.uid);
+  return { ok: true };
+};
+
 A['/push/register'] = async (c, b) => { if (b.fcmToken) await r.sadd('fcm:' + c.uid, b.fcmToken); return { ok: true }; };
 A['/push/unregister'] = async (c, b) => { if (b.fcmToken) await r.srem('fcm:' + c.uid, b.fcmToken); return { ok: true }; };
+A['/notif/action'] = async (c, b) => {
+  if (b.action === 'reply' && b.text) return send(c.uid, { chat: b.chat, text: b.text });
+  if (b.action === 'read') return markRead(c.uid, b.chat);
+  if (b.action === 'mute' && can(c.uid, b.chat)) { const m = await getM(c.uid, b.chat); m.mute = +b.until || now() + 3600000; await setM(c.uid, b.chat, m); return { ok: true }; }
+  return { err: 'bad action' };
+};
 
-/* Upload handler with Vercel Blob SDK */
+/* Uploads go browser -> Vercel Blob directly (up to 70 MB) */
 async function upload(req, res, body) {
   const { handleUpload } = require('@vercel/blob/client');
   try {
@@ -494,7 +446,7 @@ module.exports = async (req, res) => {
   try {
     if (p === '/health') return res.json({ ok: true, db: !!(await r.ping().catch(() => 0)) });
     if (p === '/upload') return upload(req, res, b);
-    if (open[p]) return res.json(await open[p](req, b, q));
+    if (open[p]) return res.json(await open[p](req, b));
     const c = await auth(req);
     if (!c) return res.status(401).json({ err: 'unauthorized' });
     if (!A[p]) return res.status(404).json({ err: 'not found' });
