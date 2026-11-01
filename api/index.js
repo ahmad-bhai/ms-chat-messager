@@ -1,374 +1,427 @@
-'use strict';
-/* MS Chat - Vercel serverless API (single function, zero npm dependencies).
-   Storage: Upstash Redis (REST). Realtime: lightweight polling via /api/sync. */
+/* MS Chat - api/index.js (single Vercel serverless function, CommonJS)
+   Env: KV_REST_API_URL/TOKEN (Upstash), BLOB_READ_WRITE_TOKEN, FIREBASE_SERVICE_ACCOUNT,
+        AUTH_SECRET, RESEND_API_KEY (+MAIL_FROM) for email codes, OTP_DEBUG=1 (dev only) */
 const crypto = require('crypto');
+const { Redis } = require('@upstash/redis');
+const r = new Redis({
+  url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
+});
+const SECRET = process.env.AUTH_SECRET || 'ms-chat-secret';
+const now = () => Date.now();
+const rid = () => crypto.randomBytes(24).toString('hex');
+const hp = (p, s) => crypto.scryptSync(String(p), s, 32).toString('hex');
+const hs = (v, uid) => crypto.createHash('sha256').update(SECRET + uid + v).digest('hex');
+const ver = () => r.incr('ver');
+const parts = c => (c[0] === 's' ? [c.slice(2)] : c.slice(2).split(':'));
+const can = (u, c) => typeof c === 'string' && /^[ps]:/.test(c) && parts(c).includes(u);
+const peerOf = (c, u) => (c[0] === 's' ? u : parts(c).find(x => x !== u));
+const pairId = (a, b) => (a === b ? 's:' + a : 'p:' + [a, b].sort().join(':'));
+const getM = (u, c) => r.get(`cm:${u}:${c}`).then(x => x || {});
+const setM = (u, c, o) => r.set(`cm:${u}:${c}`, o);
+const vis = (m, u, clr) => m && !m.dead && !(m.del || []).includes(u) && m.ts > (clr || 0);
+const muted = m => m.mute === -1 || m.mute > now();
+const isBlk = async (a, b) => a !== b && !!((await r.sismember('bl:' + a, b)) || (await r.sismember('bl:' + b, a)));
 
-/* ---------- Config ---------- */
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || process.env.REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || process.env.REDIS_REST_TOKEN;
-const SECRET = process.env.AUTH_SECRET ||
-  crypto.createHash('sha256').update('ms-chat|' + (REDIS_TOKEN || 'dev')).digest('hex');
-const ONLINE_MS = 35000;
-
-class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
-const E = (c, m) => new HttpError(c, m);
-
-/* ---------- Redis (Upstash REST pipeline) ---------- */
-async function pipe(cmds) {
-  if (!REDIS_URL || !REDIS_TOKEN) throw E(500, 'Database not configured. Connect Upstash Redis in Vercel > Storage.');
-  if (!cmds.length) return [];
-  const r = await fetch(REDIS_URL.replace(/\/$/, '') + '/pipeline', {
+async function mail(to, subject, text) {
+  if (!process.env.RESEND_API_KEY) return false;
+  const x = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
-    body: JSON.stringify(cmds.map(c => c.map(x => String(x))))
+    headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: process.env.MAIL_FROM || 'MS Chat <onboarding@resend.dev>', to, subject, text })
   });
-  let data;
-  try { data = await r.json(); } catch (e) { throw new Error('Bad Redis response'); }
-  if (!r.ok || !Array.isArray(data)) throw new Error('Redis error: ' + (data && data.error));
-  return data.map(x => { if (x.error) throw new Error('Redis: ' + x.error); return x.result; });
+  return x.ok;
 }
-const cmd = async (...c) => (await pipe([c]))[0];
-const pj = s => { if (!s) return null; try { return JSON.parse(s); } catch (e) { return null; } };
-const mget = async keys => keys.length ? (await cmd('MGET', ...keys)).map(pj) : [];
 
-/* ---------- Helpers ---------- */
-const uid = () => crypto.randomBytes(8).toString('hex');
-const clean = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USER_RE = /^[a-z0-9_]{3,20}$/i;
-const ID_RE = /^[a-f0-9]{1,32}$/;
-const validPhoto = p => {
-  if (!p) return true;
-  if (typeof p !== 'string') return false;
-  if (p.startsWith('data:image/')) return p.length < 60000;
-  return /^https?:\/\//i.test(p) && p.length < 500;
+let adm;
+function fb() {
+  if (adm !== undefined) return adm;
+  try {
+    const a = require('firebase-admin');
+    if (!a.apps.length) a.initializeApp({ credential: a.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+    adm = a;
+  } catch (e) { adm = null; }
+  return adm;
+}
+
+function status(u, seen, blocked, vid) {
+  if (u.id === vid) return 'online';
+  if (blocked || !seen) return 'last seen long time ago';
+  const a = now() - seen, d = 864e5;
+  if (a < 25000) return 'online';
+  if (!u.hideSeen) return 'ts:' + seen;
+  return 'last seen ' + (a < 7 * d ? 'recently' : a < 30 * d ? 'within a week' : a < 365 * d ? 'within a month' : a < 730 * d ? 'within a year' : 'a long time ago');
+}
+async function pub(u, vid) {
+  if (!u) return null;
+  const blocked = await isBlk(u.id, vid);
+  const seen = (await r.get('seen:' + u.id)) || 0;
+  return { id: u.id, name: u.name, username: u.username, bio: u.bio || '', dob: u.dob || '', avatar: blocked ? '' : u.avatar || '', status: status(u, seen, blocked, vid) };
+}
+const own = u => ({ id: u.id, email: u.email, name: u.name, username: u.username, bio: u.bio || '', dob: u.dob || '', avatar: u.avatar || '', hideSeen: !!u.hideSeen, two: !!(u.sec && u.sec.two), pass: !!(u.sec && u.sec.pass) });
+
+async function newSession(uid, req) {
+  const sid = rid();
+  await r.set('sess:' + sid, { uid, ua: (req.headers['user-agent'] || '').slice(0, 120), ts: now() });
+  await r.sadd('us:' + uid, sid);
+  return sid;
+}
+async function auth(req) {
+  const t = (req.headers.authorization || '').slice(7);
+  if (!t) return null;
+  const s = await r.get('sess:' + t);
+  if (!s) return null;
+  await r.set('seen:' + s.uid, now());
+  return { sid: t, uid: s.uid };
+}
+
+async function bump(chat, m) {
+  const v = await ver();
+  m.v = v;
+  await r.hset('mh:' + chat, { [m.id]: m });
+  for (const u of parts(chat)) await r.zadd('uf:' + u, { score: v, member: chat + '|' + m.id });
+}
+async function touch(u, chat) {
+  await r.zadd('uf:' + u, { score: await ver(), member: chat + '|0' });
+}
+
+async function notify(peer, from, m, chat) {
+  try {
+    const meta = await getM(peer, chat);
+    if (muted(meta)) return;
+    const toks = await r.smembers('fcm:' + peer);
+    const a = fb();
+    if (!toks.length || !a) return;
+    const cn = await r.hget('ct:' + peer, from.id);
+    const body = m.media ? '[' + m.media.type + '] ' + (m.text || '') : m.text;
+    const out = await a.messaging().sendEachForMulticast({
+      tokens: toks,
+      data: { title: cn || from.name, body: String(body).slice(0, 140), chatId: chat, msgId: String(m.id), ts: String(m.ts), silent: meta.mute === -2 ? '1' : '' },
+      webpush: { headers: { Urgency: 'high', TTL: '86400' } }
+    });
+    out.responses.forEach((x, i) => { if (!x.success && /not-registered|invalid/.test((x.error && x.error.code) || '')) r.srem('fcm:' + peer, toks[i]); });
+  } catch (e) { /* push is best effort */ }
+}
+
+async function send(uid, b) {
+  const chat = b.chat;
+  if (!can(uid, chat)) return { err: 'forbidden' };
+  const peer = peerOf(chat, uid);
+  if (peer !== uid && (await isBlk(uid, peer))) return { err: 'You cannot message this user' };
+  const text = String(b.text || '').slice(0, 4000);
+  if (!text && !b.media) return { err: 'empty' };
+  if (chat[0] === 's' && b.media) {
+    const used = (await r.get('sv:' + uid)) || 0;
+    if (used + (b.media.size || 0) > 70 * 1048576) return { err: 'Saved Messages full (70 MB limit)' };
+    await r.incrby('sv:' + uid, b.media.size || 0);
+  }
+  const id = await r.incr('mid');
+  const m = { id, chat, from: uid, text, ts: now(), media: b.media || null, reply: b.reply || null, fwd: b.fwd || null, react: {}, del: [], pin: [] };
+  await bump(chat, m);
+  await r.set('lm:' + chat, id);
+  for (const u of new Set([uid, peer])) await r.zadd('ul:' + u, { score: m.ts, member: chat });
+  if (peer !== uid) {
+    await r.incr(`un:${peer}:${chat}`);
+    await notify(peer, await r.get('user:' + uid), m, chat);
+  }
+  return { ok: true, msg: m };
+}
+
+async function markRead(uid, chat) {
+  if (!can(uid, chat)) return { err: 'forbidden' };
+  await r.set(`un:${uid}:${chat}`, 0);
+  await r.set(`rd:${chat}:${uid}`, (await r.get('lm:' + chat)) || 0);
+  const p = peerOf(chat, uid);
+  if (p !== uid) await touch(p, chat);
+  return { ok: true };
+}
+const allMsgs = async chat => (await r.hgetall('mh:' + chat)) || {};
+const getMsg = async (c, b) => (can(c.uid, b.chat) ? r.hget('mh:' + b.chat, b.id) : null);
+
+const A = {};
+const open = {
+  async '/auth/register'(req, b) {
+    const email = String(b.email || '').trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return { err: 'Invalid email' };
+    if (String(b.password || '').length < 6) return { err: 'Password must be at least 6 characters' };
+    const name = String(b.name || '').trim().slice(0, 40);
+    if (!name) return { err: 'Name required' };
+    if (await r.get('email:' + email)) return { err: 'Email already registered' };
+    const id = String(7000000000 + (await r.incr('uid')));
+    const username = String(b.username || '').replace(/^@/, '').trim() || 'user' + id.slice(-7);
+    if (!/^[a-zA-Z]\w{2,31}$/.test(username)) return { err: 'Username: 3-32 chars, letters/numbers/_' };
+    if (await r.get('uname:' + username.toLowerCase())) return { err: 'Username taken' };
+    const salt = rid();
+    const u = { id, email, name, username, bio: '', dob: '', avatar: '', salt, pw: hp(b.password, salt), sec: {}, created: now() };
+    await r.set('user:' + id, u);
+    await r.set('email:' + email, id);
+    await r.set('uname:' + username.toLowerCase(), id);
+    return { token: await newSession(id, req), me: own(u) };
+  },
+  async '/auth/login'(req, b) {
+    const id = await r.get('email:' + String(b.email || '').trim().toLowerCase());
+    const u = id && (await r.get('user:' + id));
+    if (!u || hp(b.password || '', u.salt) !== u.pw) return { err: 'Wrong email or password' };
+    if (u.sec && u.sec.two && (!b.two || hs(b.two, id) !== u.sec.two)) return { need2fa: true, err: b.two ? 'Wrong two-step password' : undefined };
+    return { token: await newSession(id, req), me: own(u) };
+  }
 };
-const scrypt = (pw, salt) => new Promise((ok, no) => crypto.scrypt(pw, salt, 64, (e, k) => e ? no(e) : ok(k.toString('hex'))));
-async function hashSecret(s) { const salt = crypto.randomBytes(16).toString('hex'); return { salt, hash: await scrypt(String(s), salt) }; }
-async function checkSecret(s, rec) {
-  if (!rec) return false;
-  const h = Buffer.from(await scrypt(String(s || ''), rec.salt), 'hex');
-  const b = Buffer.from(rec.hash, 'hex');
-  return h.length === b.length && crypto.timingSafeEqual(h, b);
+
+A['/me'] = async c => ({ me: own(await r.get('user:' + c.uid)) });
+A['/me/update'] = async (c, b) => {
+  const u = await r.get('user:' + c.uid);
+  if (b.name !== undefined) { u.name = String(b.name).trim().slice(0, 40); if (!u.name) return { err: 'Name required' }; }
+  if (b.bio !== undefined) u.bio = String(b.bio).slice(0, 120);
+  if (b.dob !== undefined) u.dob = String(b.dob).slice(0, 10);
+  if (b.avatar !== undefined) u.avatar = String(b.avatar);
+  if (b.hideSeen !== undefined) u.hideSeen = !!b.hideSeen;
+  if (b.username !== undefined && b.username !== u.username) {
+    const nu = String(b.username).replace(/^@/, '').trim();
+    if (!/^[a-zA-Z]\w{2,31}$/.test(nu)) return { err: 'Invalid username' };
+    const ex = await r.get('uname:' + nu.toLowerCase());
+    if (ex && ex !== c.uid) return { err: 'Username taken' };
+    await r.del('uname:' + u.username.toLowerCase());
+    await r.set('uname:' + nu.toLowerCase(), c.uid);
+    u.username = nu;
+  }
+  if (b.email !== undefined && b.email !== u.email) {
+    const ne = String(b.email).trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(ne)) return { err: 'Invalid email' };
+    if (hp(b.password || '', u.salt) !== u.pw) return { err: 'Password required to change email' };
+    if (await r.get('email:' + ne)) return { err: 'Email already used' };
+    await r.del('email:' + u.email);
+    await r.set('email:' + ne, c.uid);
+    u.email = ne;
+  }
+  await r.set('user:' + c.uid, u);
+  return { me: own(u) };
+};
+A['/user'] = async (c, b, q) => {
+  const k = String(q.u || '').replace(/^@/, '');
+  const id = /^\d{10}$/.test(k) ? k : await r.get('uname:' + k.toLowerCase());
+  const u = id && (await r.get('user:' + id));
+  if (!u) return { err: 'User not found' };
+  return {
+    user: await pub(u, c.uid), chat: pairId(c.uid, id), self: id === c.uid,
+    cn: (await r.hget('ct:' + c.uid, id)) || '', blocked: !!(await r.sismember('bl:' + c.uid, id))
+  };
+};
+
+A['/chats'] = async c => {
+  const ids = (await r.zrange('ul:' + c.uid, 0, -1, { rev: true })).map(String);
+  const sv = 's:' + c.uid;
+  if (!ids.includes(sv)) ids.unshift(sv);
+  const out = await Promise.all(ids.map(async chat => {
+    const [meta, lm, un] = await Promise.all([getM(c.uid, chat), r.get('lm:' + chat), r.get(`un:${c.uid}:${chat}`)]);
+    const m = lm ? await r.hget('mh:' + chat, lm) : null;
+    const pid = peerOf(chat, c.uid);
+    const [pu, cn] = await Promise.all([r.get('user:' + pid), r.hget('ct:' + c.uid, pid)]);
+    if (!pu) return null;
+    return { chat, saved: chat === sv, peer: await pub(pu, c.uid), cn: cn || '', last: vis(m, c.uid, meta.clr) ? m : null, unread: +un || 0, mute: muted(meta) || meta.mute === -2 ? meta.mute : 0, blocked: !!(await r.sismember('bl:' + c.uid, pid)) };
+  }));
+  return { chats: out.filter(Boolean), v: +(await r.get('ver')) || 0 };
+};
+A['/msgs'] = async (c, b, q) => {
+  const chat = q.chat;
+  if (!can(c.uid, chat)) return { err: 'forbidden' };
+  const meta = await getM(c.uid, chat);
+  const list = Object.values(await allMsgs(chat)).filter(m => vis(m, c.uid, meta.clr)).sort((a, b) => a.id - b.id);
+  let from = Math.max(0, list.length - 120);
+  if (q.mode === 'first') from = 0;
+  if (q.around) from = Math.max(0, list.findIndex(m => m.id === +q.around) - 40);
+  const pins = list.filter(m => (m.pin || []).includes(c.uid));
+  return { msgs: list.slice(from, from + 120), pin: pins.length ? pins[pins.length - 1] : null, rd: +(await r.get(`rd:${chat}:${peerOf(chat, c.uid)}`)) || 0 };
+};
+A['/updates'] = async (c, b, q) => {
+  const after = +q.after || 0;
+  const v = +(await r.get('ver')) || 0;
+  const mem = after < v ? await r.zrange('uf:' + c.uid, after + 1, '+inf', { byScore: true }) : [];
+  const items = [], seen = new Set(), metas = {};
+  for (const x of mem) {
+    const [chat, id] = String(x).split('|');
+    if (seen.has(String(x)) || !can(c.uid, chat)) continue;
+    seen.add(String(x));
+    const rd = +(await r.get(`rd:${chat}:${peerOf(chat, c.uid)}`)) || 0;
+    if (id === '0') { items.push({ chat, rd }); continue; }
+    metas[chat] = metas[chat] || (await getM(c.uid, chat));
+    const m = await r.hget('mh:' + chat, id);
+    items.push({ chat, rd, msg: vis(m, c.uid, metas[chat].clr) ? m : { id: +id, gone: true } });
+  }
+  return { v, items };
+};
+A['/open'] = async (c, b) => ({ chat: pairId(c.uid, String(b.peerId)) });
+A['/send'] = (c, b) => send(c.uid, b);
+A['/read'] = (c, b) => markRead(c.uid, b.chat);
+A['/edit'] = async (c, b) => {
+  const m = await getMsg(c, b);
+  if (!m || m.from !== c.uid || m.dead) return { err: 'cannot edit' };
+  m.text = String(b.text || '').slice(0, 4000); m.edited = true;
+  await bump(b.chat, m);
+  return { ok: true, msg: m };
+};
+A['/delete'] = async (c, b) => {
+  const m = await getMsg(c, b);
+  if (!m) return { err: 'not found' };
+  if (b.both) m.dead = true; else m.del = [...new Set([...(m.del || []), c.uid])];
+  await bump(b.chat, m);
+  return { ok: true };
+};
+A['/pin'] = async (c, b) => {
+  const m = await getMsg(c, b);
+  if (!m) return { err: 'not found' };
+  const us = b.both ? parts(b.chat) : [c.uid];
+  m.pin = b.un ? (m.pin || []).filter(x => !us.includes(x)) : [...new Set([...(m.pin || []), ...us])];
+  await bump(b.chat, m);
+  return { ok: true };
+};
+A['/react'] = async (c, b) => {
+  const m = await getMsg(c, b);
+  if (!m) return { err: 'not found' };
+  m.react = m.react || {};
+  if (m.react[c.uid] === b.emoji) delete m.react[c.uid]; else m.react[c.uid] = String(b.emoji).slice(0, 16);
+  await bump(b.chat, m);
+  return { ok: true, msg: m };
+};
+A['/chat/mute'] = async (c, b) => {
+  if (!can(c.uid, b.chat)) return { err: 'forbidden' };
+  const m = await getM(c.uid, b.chat); m.mute = +b.until || 0;
+  await setM(c.uid, b.chat, m);
+  return { ok: true };
+};
+A['/chat/clear'] = async (c, b) => {
+  if (!can(c.uid, b.chat)) return { err: 'forbidden' };
+  for (const u of b.both ? parts(b.chat) : [c.uid]) { const m = await getM(u, b.chat); m.clr = now(); await setM(u, b.chat, m); if (u !== c.uid) await touch(u, b.chat); }
+  return { ok: true };
+};
+A['/chat/delete'] = async (c, b) => {
+  if (!can(c.uid, b.chat)) return { err: 'forbidden' };
+  for (const u of b.both ? parts(b.chat) : [c.uid]) {
+    const m = await getM(u, b.chat); m.clr = now(); await setM(u, b.chat, m);
+    if (b.chat[0] !== 's') await r.zrem('ul:' + u, b.chat);
+    if (u !== c.uid) await touch(u, b.chat);
+  }
+  return { ok: true };
+};
+A['/search'] = async (c, b, q) => {
+  const s = String(q.q || '').trim().toLowerCase();
+  if (!s) return { msgs: [], users: [], chats: [] };
+  const scan = async chat => {
+    const meta = await getM(c.uid, chat);
+    return Object.values(await allMsgs(chat)).filter(m => vis(m, c.uid, meta.clr) && (m.text || '').toLowerCase().includes(s)).sort((a, b) => b.id - a.id);
+  };
+  if (q.chat) return can(c.uid, q.chat) ? { msgs: (await scan(q.chat)).slice(0, 50) } : { err: 'forbidden' };
+  const users = [];
+  const uid2 = await r.get('uname:' + s.replace(/^@/, ''));
+  if (uid2) users.push(await pub(await r.get('user:' + uid2), c.uid));
+  const ids = (await r.zrange('ul:' + c.uid, 0, -1, { rev: true })).map(String).slice(0, 40);
+  const chats = [];
+  for (const chat of ids) { const f = await scan(chat); if (f.length) chats.push({ chat, n: f.length, snippet: f[0].text }); }
+  return { users: users.filter(Boolean), chats };
+};
+
+A['/block'] = async (c, b) => { await (b.block ? r.sadd('bl:' + c.uid, String(b.peer)) : r.srem('bl:' + c.uid, String(b.peer))); return { ok: true }; };
+A['/blocked'] = async c => {
+  const ids = await r.smembers('bl:' + c.uid);
+  return { users: (await Promise.all(ids.map(async i => pub(await r.get('user:' + i), c.uid)))).filter(Boolean) };
+};
+A['/contact'] = async (c, b) => {
+  if (b.del) await r.hdel('ct:' + c.uid, String(b.peer));
+  else await r.hset('ct:' + c.uid, { [String(b.peer)]: String(b.name || '').slice(0, 40) });
+  return { ok: true };
+};
+
+const kind = b => (b.kind === 'pass' ? 'pass' : 'two');
+A['/sec/set'] = async (c, b) => {
+  const u = await r.get('user:' + c.uid), k = kind(b);
+  if (u.sec && u.sec[k] && hs(b.current || '', c.uid) !== u.sec[k]) return { err: 'Current value is wrong' };
+  if (String(b.value || '').length < 4) return { err: 'Minimum 4 characters' };
+  u.sec = u.sec || {}; u.sec[k] = hs(b.value, c.uid);
+  await r.set('user:' + c.uid, u);
+  return { ok: true };
+};
+A['/sec/remove'] = async (c, b) => {
+  const u = await r.get('user:' + c.uid), k = kind(b);
+  if (!u.sec || !u.sec[k] || hs(b.value || '', c.uid) !== u.sec[k]) return { err: 'Wrong value' };
+  delete u.sec[k]; await r.set('user:' + c.uid, u);
+  return { ok: true };
+};
+A['/sec/verify'] = async (c, b) => {
+  const u = await r.get('user:' + c.uid), k = kind(b);
+  return { ok: !!(u.sec && u.sec[k] && hs(b.value || '', c.uid) === u.sec[k]) };
+};
+A['/devices'] = async c => {
+  const out = [];
+  for (const sid of await r.smembers('us:' + c.uid)) {
+    const s = await r.get('sess:' + sid);
+    if (s) out.push({ id: sid, ua: s.ua, ts: s.ts, current: sid === c.sid }); else await r.srem('us:' + c.uid, sid);
+  }
+  return { devices: out };
+};
+A['/devices/logout'] = async (c, b) => {
+  if (!(await r.sismember('us:' + c.uid, b.id))) return { err: 'not found' };
+  await r.del('sess:' + b.id); await r.srem('us:' + c.uid, b.id);
+  return { ok: true };
+};
+A['/auth/logout'] = async c => { await r.del('sess:' + c.sid); await r.srem('us:' + c.uid, c.sid); return { ok: true }; };
+A['/account/delete-start'] = async c => {
+  const u = await r.get('user:' + c.uid);
+  if (!(u.sec && (u.sec.two || u.sec.pass))) return { err: 'setup2fa' };
+  const code = String(crypto.randomInt(100000, 999999));
+  await r.set('otp:' + c.uid, { code: hs(code, c.uid), exp: now() + 600000 }, { ex: 600 });
+  const sent = await mail(u.email, 'MS Chat account deletion code', 'Your code: ' + code + ' (valid 10 minutes). If this was not you, ignore this email.');
+  if (!sent && process.env.OTP_DEBUG !== '1') return { err: 'Email service not configured (set RESEND_API_KEY)' };
+  return { ok: true, need: { two: !!u.sec.two, pass: !!u.sec.pass }, debug: !sent ? code : undefined };
+};
+A['/account/delete-confirm'] = async (c, b) => {
+  const u = await r.get('user:' + c.uid), o = await r.get('otp:' + c.uid);
+  if (!o || o.exp < now() || hs(String(b.code || ''), c.uid) !== o.code) return { err: 'Wrong or expired email code' };
+  if (u.sec.two && hs(b.two || '', c.uid) !== u.sec.two) return { err: 'Wrong two-step password' };
+  if (u.sec.pass && hs(b.pass || '', c.uid) !== u.sec.pass) return { err: 'Wrong passcode' };
+  for (const sid of await r.smembers('us:' + c.uid)) await r.del('sess:' + sid);
+  await r.del('user:' + c.uid, 'uname:' + u.username.toLowerCase(), 'email:' + u.email, 'us:' + c.uid, 'fcm:' + c.uid, 'ct:' + c.uid, 'bl:' + c.uid, 'ul:' + c.uid, 'uf:' + c.uid, 'otp:' + c.uid);
+  return { ok: true };
+};
+
+A['/push/register'] = async (c, b) => { if (b.fcmToken) await r.sadd('fcm:' + c.uid, b.fcmToken); return { ok: true }; };
+A['/push/unregister'] = async (c, b) => { if (b.fcmToken) await r.srem('fcm:' + c.uid, b.fcmToken); return { ok: true }; };
+A['/notif/action'] = async (c, b) => {
+  if (b.action === 'reply' && b.text) return send(c.uid, { chat: b.chat, text: b.text });
+  if (b.action === 'read') return markRead(c.uid, b.chat);
+  if (b.action === 'mute' && can(c.uid, b.chat)) { const m = await getM(c.uid, b.chat); m.mute = +b.until || now() + 3600000; await setM(c.uid, b.chat, m); return { ok: true }; }
+  return { err: 'bad action' };
+};
+
+/* Uploads go browser -> Vercel Blob directly (up to 70 MB) */
+async function upload(req, res, body) {
+  const { handleUpload } = require('@vercel/blob/client');
+  try {
+    const j = await handleUpload({
+      body, request: req,
+      onBeforeGenerateToken: async (pathname, payload) => {
+        if (!payload || !(await r.get('sess:' + payload))) throw new Error('unauthorized');
+        return { maximumSizeInBytes: 70 * 1048576, addRandomSuffix: true };
+      },
+      onUploadCompleted: async () => {}
+    });
+    return res.status(200).json(j);
+  } catch (e) { return res.status(400).json({ error: e.message }); }
 }
 
-/* Signed stateless tokens (no DB lookup per request) */
-function signToken(userId) {
-  const payload = Buffer.from(JSON.stringify({ u: userId, e: Date.now() + 60 * 864e5 })).toString('base64url');
-  const sig = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
-  return payload + '.' + sig;
-}
-function verifyToken(t) {
-  if (!t || typeof t !== 'string') return null;
-  const [p, s] = t.split('.');
-  if (!p || !s) return null;
-  const exp = crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
-  const a = Buffer.from(s), b = Buffer.from(exp);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try { const d = JSON.parse(Buffer.from(p, 'base64url').toString()); return d.e > Date.now() ? d.u : null; } catch (e) { return null; }
-}
-function authId(req) {
-  const h = req.headers.authorization || '';
-  const id = verifyToken(h.startsWith('Bearer ') ? h.slice(7) : '');
-  if (!id) throw E(401, 'Not signed in');
-  return id;
-}
-
-/* ---------- HTTP utils ---------- */
-function send(res, code, obj) {
-  res.statusCode = code;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify(obj));
-}
-async function body(req) {
-  if (req.body !== undefined && req.body !== null) {
-    if (Buffer.isBuffer(req.body)) req = { body: req.body.toString() };
-    if (typeof req.body === 'object') return req.body;
-    if (typeof req.body === 'string') { if (!req.body.trim()) return {}; try { return JSON.parse(req.body); } catch (e) { throw E(400, 'Bad JSON'); } }
-  }
-  const chunks = []; let n = 0;
-  for await (const c of req) { n += c.length; if (n > 600000) throw E(413, 'Payload too large'); chunks.push(c); }
-  if (!chunks.length) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString()); } catch (e) { throw E(400, 'Bad JSON'); }
-}
-const clientIp = req => String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'ip';
-
-/* ---------- Views ---------- */
-const selfUser = u => ({ id: u.id, email: u.email, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '', twoStepEnabled: !!u.twoStepEnabled });
-const pubUser = (u, seen) => u ? ({
-  id: u.id, firstName: u.firstName, username: u.username, bio: u.bio || '', profilePhoto: u.profilePhoto || '',
-  online: !!seen && Date.now() - seen < ONLINE_MS, lastSeen: seen || 0
-}) : { id: '', firstName: 'Deleted', username: '', bio: '', profilePhoto: '', online: false, lastSeen: 0 };
-const msgView = (m, reply) => ({ id: m.id, chatId: m.chatId, senderId: m.senderId, text: m.text, time: m.time, edited: !!m.edited, read: m.readBy.length > 0, replyTo: reply || null });
-const replyView = r => r ? { id: r.id, senderId: r.senderId, text: r.text.slice(0, 120) } : null;
-
-async function getChat(id, me) {
-  id = String(id || '');
-  if (!ID_RE.test(id)) throw E(404, 'Chat not found');
-  const c = pj(await cmd('GET', 'chat:' + id));
-  if (!c || !c.members.includes(me)) throw E(404, 'Chat not found');
-  return c;
-}
-async function loadUser(id) { const u = pj(await cmd('GET', 'u:' + id)); if (!u) throw E(401, 'Not signed in'); return u; }
-
-/* ---------- Router ---------- */
-async function route(req, res) {
-  const url = new URL(req.url, 'http://localhost');
-  let p = url.pathname.replace(/^\/api\/?/, '').replace(/\/+$/, '');
-  if (p === '' || p === 'index') p = (url.searchParams.get('path') || '').replace(/^\/+|\/+$/g, '');
-  const m = req.method;
-  let mt;
-
-  if (m === 'GET' && p === 'health') return send(res, 200, { ok: true, db: !!(REDIS_URL && REDIS_TOKEN) });
-
-  /* ----- Public auth ----- */
-  if (m === 'POST' && p === 'auth/check-email') {
-    const b = await body(req);
-    const email = clean(b.email, 120).toLowerCase();
-    if (!EMAIL_RE.test(email)) throw E(400, 'Enter a valid email');
-    return send(res, 200, { success: true, exists: !!(await cmd('GET', 'e:' + email)) });
-  }
-
-  if (m === 'POST' && p === 'auth/register') {
-    const b = await body(req);
-    const email = clean(b.email, 120).toLowerCase();
-    const password = String(b.password || '');
-    const firstName = clean(b.firstName, 40);
-    const username = clean(b.username, 21).replace(/^@/, '');
-    if (!EMAIL_RE.test(email)) throw E(400, 'Enter a valid email');
-    if (password.length < 6) throw E(400, 'Password must be at least 6 characters');
-    if (!firstName) throw E(400, 'First name is required');
-    if (!USER_RE.test(username)) throw E(400, 'Username: 3-20 letters, numbers or underscore');
-    const id = uid();
-    if (!(await cmd('SET', 'e:' + email, id, 'NX'))) throw E(409, 'Email already registered');
-    if (!(await cmd('SET', 'n:' + username.toLowerCase(), id, 'NX'))) { await cmd('DEL', 'e:' + email); throw E(409, 'Username is taken'); }
-    const user = { id, email, firstName, username, bio: '', profilePhoto: '', pass: await hashSecret(password), twoStepEnabled: false, pin: null, createdAt: Date.now() };
-    await pipe([
-      ['SET', 'u:' + id, JSON.stringify(user)], ['SET', 'seen:' + id, Date.now()],
-      ['ZADD', 'idx', 0, username.toLowerCase() + '|' + id], ['ZADD', 'idx', 0, firstName.toLowerCase() + '|' + id]
-    ]);
-    return send(res, 200, { success: true, token: signToken(id), user: selfUser(user) });
-  }
-
-  if (m === 'POST' && p === 'auth/login') {
-    const b = await body(req);
-    const email = clean(b.email, 120).toLowerCase();
-    const rl = 'rl:' + clientIp(req) + '|' + email;
-    if (+(await cmd('GET', rl)) >= 10) throw E(429, 'Too many attempts. Try again in a few minutes.');
-    const bad = async msg => { await pipe([['INCR', rl], ['EXPIRE', rl, 600]]); throw E(401, msg); };
-    const id = await cmd('GET', 'e:' + email);
-    const user = id ? pj(await cmd('GET', 'u:' + id)) : null;
-    if (!user || !(await checkSecret(b.password, user.pass))) return bad('Wrong email or password');
-    if (user.twoStepEnabled) {
-      if (!b.twoStepPin) return send(res, 200, { success: false, requiresTwoStep: true });
-      if (!(await checkSecret(b.twoStepPin, user.pin))) return bad('Wrong two-step PIN');
-    }
-    await cmd('DEL', rl);
-    return send(res, 200, { success: true, token: signToken(user.id), user: selfUser(user) });
-  }
-
-  /* ----- Everything below needs a token ----- */
-  const me = authId(req);
-
-  /* Lightweight poll: version counter + typing + heartbeat */
-  if (m === 'GET' && p === 'sync') {
-    const chat = url.searchParams.get('chat') || '', peer = url.searchParams.get('peer') || '';
-    const cmds = [['GET', 'ver:' + me]];
-    const wantTyping = ID_RE.test(chat) && ID_RE.test(peer);
-    if (wantTyping) cmds.push(['GET', 'typing:' + chat + ':' + peer]);
-    if (url.searchParams.get('hb')) cmds.push(['SET', 'seen:' + me, Date.now()]);
-    const r = await pipe(cmds);
-    return send(res, 200, { success: true, ver: +r[0] || 0, typing: wantTyping && !!r[1] });
-  }
-
-  if (m === 'GET' && p === 'me') return send(res, 200, { success: true, user: selfUser(await loadUser(me)) });
-  if (m === 'POST' && p === 'auth/logout') return send(res, 200, { success: true });
-
-  if (m === 'POST' && p === 'user/update') {
-    const b = await body(req);
-    const user = await loadUser(me);
-    const firstName = clean(b.firstName, 40);
-    const username = clean(b.username, 21).replace(/^@/, '');
-    if (!firstName) throw E(400, 'First name is required');
-    if (!USER_RE.test(username)) throw E(400, 'Username: 3-20 letters, numbers or underscore');
-    if (!validPhoto(b.profilePhoto)) throw E(400, 'Invalid profile photo');
-    let pin = user.pin, twoStep = false;
-    if (b.twoStepEnabled) {
-      const raw = String(b.twoStepPassword || '');
-      if (raw) { if (raw.length < 4) throw E(400, 'PIN must be at least 4 characters'); pin = await hashSecret(raw); }
-      else if (!user.pin) throw E(400, 'Set a PIN to enable two-step verification');
-      twoStep = true;
-    } else pin = null;
-    const oldName = user.username.toLowerCase(), newName = username.toLowerCase();
-    if (oldName !== newName) {
-      if (!(await cmd('SET', 'n:' + newName, me, 'NX'))) throw E(409, 'Username is taken');
-    }
-    const oldFirst = user.firstName.toLowerCase();
-    Object.assign(user, { firstName, username, bio: clean(b.bio, 120), profilePhoto: b.profilePhoto || '', twoStepEnabled: twoStep, pin });
-    const cmds = [
-      ['SET', 'u:' + me, JSON.stringify(user)],
-      ['ZREM', 'idx', oldName + '|' + me, oldFirst + '|' + me],
-      ['ZADD', 'idx', 0, newName + '|' + me], ['ZADD', 'idx', 0, firstName.toLowerCase() + '|' + me]
-    ];
-    if (oldName !== newName) cmds.push(['DEL', 'n:' + oldName]);
-    await pipe(cmds);
-    return send(res, 200, { success: true, user: selfUser(user) });
-  }
-
-  if (m === 'GET' && p === 'users/search') {
-    const q = clean(url.searchParams.get('q'), 40).replace(/^@/, '').toLowerCase();
-    if (!q) return send(res, 200, []);
-    const members = await cmd('ZRANGEBYLEX', 'idx', '[' + q, '[' + q + 'ÿ', 'LIMIT', '0', '40');
-    const ids = [...new Set(members.map(s => s.slice(s.lastIndexOf('|') + 1)))].filter(i => i !== me).slice(0, 20);
-    if (!ids.length) return send(res, 200, []);
-    const r = await pipe([...ids.map(i => ['GET', 'u:' + i]), ...ids.map(i => ['GET', 'seen:' + i])]);
-    return send(res, 200, ids.map((_, i) => pj(r[i]) && pubUser(pj(r[i]), +r[ids.length + i] || 0)).filter(Boolean));
-  }
-
-  /* ----- Chats ----- */
-  if (m === 'GET' && p === 'chats') {
-    const ids = await cmd('SMEMBERS', 'uchats:' + me);
-    if (!ids.length) return send(res, 200, []);
-    const r = await pipe(ids.flatMap(id => [['GET', 'chat:' + id], ['GET', 'last:' + id], ['GET', 'unread:' + me + ':' + id]]));
-    const items = ids.map((_, i) => ({ chat: pj(r[i * 3]), last: pj(r[i * 3 + 1]), unread: Math.max(0, +r[i * 3 + 2] || 0) }))
-      .filter(x => x.chat && (x.last || x.chat.createdBy === me));
-    const others = items.map(x => x.chat.members.find(i => i !== me) || me);
-    const r2 = items.length ? await pipe([...others.map(o => ['GET', 'u:' + o]), ...others.map(o => ['GET', 'seen:' + o])]) : [];
-    const out = items.map((x, i) => ({
-      id: x.chat.id, user: pubUser(pj(r2[i]), +r2[items.length + i] || 0),
-      last: x.last ? { id: x.last.id, chatId: x.chat.id, senderId: x.last.senderId, text: x.last.text, time: x.last.time } : null,
-      unread: x.unread, updated: x.last ? x.last.time : x.chat.createdAt
-    })).sort((a, b) => b.updated - a.updated);
-    return send(res, 200, out);
-  }
-
-  if (m === 'POST' && p === 'chats/create') {
-    const b = await body(req);
-    const tid = String(b.targetUserId || '');
-    const target = ID_RE.test(tid) ? pj(await cmd('GET', 'u:' + tid)) : null;
-    if (!target || target.id === me) throw E(400, 'Invalid user');
-    const pk = 'pair:' + [me, target.id].sort().join(':');
-    let chat = null;
-    const existing = await cmd('GET', pk);
-    if (existing) chat = pj(await cmd('GET', 'chat:' + existing));
-    if (!chat) {
-      chat = { id: uid(), members: [me, target.id], createdBy: me, createdAt: Date.now() };
-      await cmd('SET', 'chat:' + chat.id, JSON.stringify(chat));
-      if (!(await cmd('SET', pk, chat.id, 'NX'))) chat = pj(await cmd('GET', 'chat:' + (await cmd('GET', pk))));
-    }
-    const r = await pipe([['SADD', 'uchats:' + me, chat.id], ['GET', 'last:' + chat.id], ['GET', 'seen:' + target.id]]);
-    const last = pj(r[1]);
-    return send(res, 200, { success: true, chat: {
-      id: chat.id, user: pubUser(target, +r[2] || 0), last: last ? { ...last, chatId: chat.id } : null, unread: 0, updated: last ? last.time : chat.createdAt
-    } });
-  }
-
-  if ((mt = p.match(/^chats\/clear\/([a-f0-9]+)$/)) && m === 'DELETE') {
-    const chat = await getChat(mt[1], me);
-    const other = chat.members.find(i => i !== me);
-    const ids = await cmd('ZRANGE', 'cm:' + chat.id, 0, -1);
-    await pipe([
-      ...(ids.length ? [['DEL', ...ids.map(i => 'm:' + i)]] : []),
-      ['DEL', 'cm:' + chat.id, 'last:' + chat.id, 'unread:' + me + ':' + chat.id, 'unread:' + other + ':' + chat.id],
-      ['INCR', 'ver:' + other]
-    ]);
-    return send(res, 200, { success: true });
-  }
-
-  if ((mt = p.match(/^chats\/([a-f0-9]+)\/read$/)) && m === 'POST') {
-    const chat = await getChat(mt[1], me);
-    const other = chat.members.find(i => i !== me);
-    const ids = await cmd('ZRANGE', 'cm:' + chat.id, -200, -1);
-    const ms = (await mget(ids.map(i => 'm:' + i))).filter(Boolean);
-    const upd = ms.filter(x => x.senderId !== me && !x.readBy.includes(me));
-    const cmds = upd.map(x => { x.readBy.push(me); return ['SET', 'm:' + x.id, JSON.stringify(x)]; });
-    cmds.push(['DEL', 'unread:' + me + ':' + chat.id]);
-    if (upd.length) cmds.push(['INCR', 'ver:' + other]);
-    await pipe(cmds);
-    return send(res, 200, { success: true });
-  }
-
-  if (m === 'POST' && p === 'typing') {
-    const b = await body(req);
-    const chat = await getChat(b.chatId, me);
-    await cmd('SET', 'typing:' + chat.id + ':' + me, 1, 'EX', 5);
-    return send(res, 200, { success: true });
-  }
-
-  /* ----- Messages ----- */
-  if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && m === 'GET') {
-    const chat = await getChat(mt[1], me);
-    const ids = await cmd('ZRANGE', 'cm:' + chat.id, -300, -1);
-    const ms = (await mget(ids.map(i => 'm:' + i))).filter(Boolean);
-    const byId = new Map(ms.map(x => [x.id, x]));
-    const need = [...new Set(ms.map(x => x.replyTo).filter(r => r && !byId.has(r)))];
-    (await mget(need.map(i => 'm:' + i))).filter(Boolean).forEach(x => byId.set(x.id, x));
-    return send(res, 200, ms.map(x => msgView(x, x.replyTo ? (byId.has(x.replyTo) ? replyView(byId.get(x.replyTo)) : { id: x.replyTo, deleted: true }) : null)));
-  }
-
-  if (m === 'POST' && p === 'messages') {
-    const b = await body(req);
-    const chat = await getChat(b.chatId, me);
-    const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
-    if (!text) throw E(400, 'Empty message');
-    let replyTo = null, replyMsg = null;
-    if (b.replyTo && ID_RE.test(String(b.replyTo))) {
-      const r = pj(await cmd('GET', 'm:' + b.replyTo));
-      if (r && r.chatId === chat.id) { replyTo = r.id; replyMsg = r; }
-    }
-    const other = chat.members.find(i => i !== me);
-    const msg = { id: uid(), chatId: chat.id, senderId: me, text, time: Date.now(), edited: false, replyTo, readBy: [] };
-    const last = { id: msg.id, chatId: chat.id, senderId: me, text: text.slice(0, 200), time: msg.time };
-    await pipe([
-      ['SET', 'm:' + msg.id, JSON.stringify(msg)], ['ZADD', 'cm:' + chat.id, msg.time, msg.id],
-      ['SET', 'last:' + chat.id, JSON.stringify(last)], ['INCR', 'unread:' + other + ':' + chat.id],
-      ['SADD', 'uchats:' + other, chat.id], ['SADD', 'uchats:' + me, chat.id],
-      ['DEL', 'typing:' + chat.id + ':' + me], ['INCR', 'ver:' + other]
-    ]);
-    return send(res, 200, { success: true, message: msgView(msg, replyView(replyMsg)) });
-  }
-
-  if ((mt = p.match(/^messages\/([a-f0-9]+)$/)) && (m === 'PUT' || m === 'DELETE')) {
-    const msg = pj(await cmd('GET', 'm:' + mt[1]));
-    if (!msg || msg.senderId !== me) throw E(404, 'Message not found');
-    const chat = await getChat(msg.chatId, me);
-    const other = chat.members.find(i => i !== me);
-    if (m === 'PUT') {
-      const b = await body(req);
-      const text = String(b.text == null ? '' : b.text).trim().slice(0, 4000);
-      if (!text) throw E(400, 'Empty message');
-      msg.text = text; msg.edited = true;
-      const cmds = [['SET', 'm:' + msg.id, JSON.stringify(msg)], ['INCR', 'ver:' + other]];
-      const last = pj(await cmd('GET', 'last:' + chat.id));
-      if (last && last.id === msg.id) cmds.push(['SET', 'last:' + chat.id, JSON.stringify({ ...last, text: text.slice(0, 200) })]);
-      await pipe(cmds);
-      const rm = msg.replyTo ? pj(await cmd('GET', 'm:' + msg.replyTo)) : null;
-      return send(res, 200, { success: true, message: msgView(msg, msg.replyTo ? (rm ? replyView(rm) : { id: msg.replyTo, deleted: true }) : null) });
-    }
-    const cmds = [['ZREM', 'cm:' + chat.id, msg.id], ['DEL', 'm:' + msg.id]];
-    if (!msg.readBy.length) {
-      const key = 'unread:' + other + ':' + chat.id;
-      if (+(await cmd('GET', key)) > 0) cmds.push(['DECR', key]);
-    }
-    await pipe(cmds);
-    const lastIds = await cmd('ZRANGE', 'cm:' + chat.id, -1, -1);
-    const lm = lastIds.length ? pj(await cmd('GET', 'm:' + lastIds[0])) : null;
-    await pipe([
-      lm ? ['SET', 'last:' + chat.id, JSON.stringify({ id: lm.id, chatId: chat.id, senderId: lm.senderId, text: lm.text.slice(0, 200), time: lm.time })] : ['DEL', 'last:' + chat.id],
-      ['INCR', 'ver:' + other]
-    ]);
-    return send(res, 200, { success: true });
-  }
-
-  throw E(404, 'Not found');
-}
-
-module.exports = async function handler(req, res) {
-  try { await route(req, res); }
-  catch (e) {
-    if (e instanceof HttpError) return send(res, e.code, { success: false, message: e.message });
-    console.error(e);
-    send(res, 500, { success: false, message: 'Server error' });
+  const p = req.url.split('?')[0].replace(/^\/api/, '').replace(/\/+$/, '') || '/';
+  const q = req.query || {};
+  const b = (req.body && typeof req.body === 'object' && req.body) || {};
+  try {
+    if (p === '/health') return res.json({ ok: true, db: !!(await r.ping().catch(() => 0)) });
+    if (p === '/upload') return upload(req, res, b);
+    if (open[p]) return res.json(await open[p](req, b));
+    const c = await auth(req);
+    if (!c) return res.status(401).json({ err: 'unauthorized' });
+    if (!A[p]) return res.status(404).json({ err: 'not found' });
+    return res.json(await A[p](c, b, q, req));
+  } catch (e) {
+    console.error(p, e);
+    return res.status(500).json({ err: 'Server error' });
   }
 };
