@@ -3,130 +3,133 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#14101c" id="metaTheme">
+<meta name="theme-color" content="#0d0a14" id="metaTheme">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icon-192.png">
 <title>MS Chat</title>
 <style>
-  @keyframes popIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-  @keyframes pulseLogo { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+  @keyframes appPop { 0% { transform: scale(0.94) translateY(6px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
+  @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 15px rgba(197, 79, 218, 0.4); } 50% { box-shadow: 0 0 30px rgba(225, 32, 228, 0.75); } }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
   :root {
-    --bg: #14101c;
-    --badge-bg: rgba(38, 32, 52, 0.72);
-    --badge-border: rgba(255, 255, 255, 0.14);
-    --tx: #ffffff;
-    --soft: #D0BDF4;
-    --ac: linear-gradient(135deg, #E120E4 0%, #C54FDA 50%, #9B0BE1 100%);
-    --me: #7a2bc4;
-    --in: #262034;
-    --fs: 16px;
-    --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --bg: #0d0a14;
+    --badge-bg: rgba(26, 20, 38, 0.75);
+    --badge-border: rgba(255, 255, 255, 0.12);
+    --tx: #f8f6ff;
+    --soft: #c4b5fd;
+    --ac: linear-gradient(135deg, #e120e4 0%, #c54fda 50%, #8b5cf6 100%);
+    --me: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    --in: rgba(255, 255, 255, 0.05);
+    --fs: 15px;
+    --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
 
   [data-t=light] {
-    --bg: #f3ecfb;
-    --badge-bg: rgba(255, 255, 255, 0.85);
-    --badge-border: rgba(0, 0, 0, 0.1);
-    --tx: #1d1530;
-    --soft: #6a4fa0;
-    --me: #e3c9fb;
+    --bg: #f4effc;
+    --badge-bg: rgba(255, 255, 255, 0.88);
+    --badge-border: rgba(139, 92, 246, 0.15);
+    --tx: #1e1b2e;
+    --soft: #6d28d9;
+    --me: linear-gradient(135deg, #ddd6fe 0%, #c4b5fd 100%);
     --in: #ffffff;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    --shadow: 0 10px 30px rgba(109, 40, 217, 0.12);
   }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; height: 100dvh; background: var(--bg); color: var(--tx); font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
+  html, body { height: 100%; height: 100dvh; background: var(--bg); color: var(--tx); overflow: hidden; }
   [hidden] { display: none !important; }
 
   .i { width: 22px; height: 22px; fill: currentColor; flex: none; }
 
-  /* App Layout & Stack Layering Fix */
+  /* Native Mobile Window Layers */
   .scr { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 1; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
   #cv { z-index: 2; }
   #pg { z-index: 3; }
-  #dr { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); }
-  #sh { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); }
+  #dr { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7); backdrop-filter: blur(12px); }
+  #sh { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,0.7); backdrop-filter: blur(12px); }
   #dlg { position: fixed; inset: 0; z-index: 120; pointer-events: none; }
-  #ts { position: fixed; left: 0; right: 0; bottom: 80px; z-index: 130; display: flex; justify-content: center; pointer-events: none; }
-  .tt { background: rgba(20, 16, 28, 0.95); border: 1px solid var(--badge-border); color: #fff; border-radius: 999px; padding: 10px 22px; font-size: 14px; box-shadow: var(--shadow); animation: popIn 0.2s ease; }
+  #ts { position: fixed; left: 0; right: 0; bottom: 90px; z-index: 130; display: flex; justify-content: center; pointer-events: none; }
+  .tt { background: rgba(20, 15, 32, 0.95); border: 1px solid var(--badge-border); color: #fff; border-radius: 999px; padding: 12px 24px; font-size: 14px; font-weight: 600; box-shadow: var(--shadow); animation: appPop 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 
-  /* Glassmorphism Badges */
+  /* Glassmorphism Badges Styling */
   .badge {
     background: var(--badge-bg);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
-    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid var(--badge-border);
-    border-radius: 20px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.12);
+    border-radius: 24px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
   }
   .badge.pill { border-radius: 999px; }
   .badge.fit { width: auto; }
 
-  .hd { display: flex; align-items: center; gap: 10px; padding: 10px 14px; min-height: 60px; flex-shrink: 0; }
+  .hd { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 64px; flex-shrink: 0; }
   .fx { flex: 1; min-width: 0; }
-  .ttl { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+  .ttl { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
 
-  .ib, .tile { width: 42px; height: 42px; border-radius: 14px; border: 0; color: inherit; background: none; display: flex; align-items: center; justify-content: center; flex: none; cursor: pointer; transition: transform .15s ease, background .15s ease; }
-  .ib:active, .tile:active { transform: scale(0.92); }
-  .tile { background: var(--ac); color: #fff; box-shadow: 0 4px 15px rgba(197,79,218,0.35); }
+  .ib, .tile { width: 44px; height: 44px; border-radius: 16px; border: 0; color: inherit; background: var(--in); display: flex; align-items: center; justify-content: center; flex: none; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+  .ib:active, .tile:active { transform: scale(0.9); }
+  .tile { background: var(--ac); color: #fff; box-shadow: 0 6px 20px rgba(197,79,218,0.4); }
 
-  .av { border-radius: 50%; object-fit: cover; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; flex: none; }
-  .row { display: flex; gap: 14px; align-items: center; padding: 12px 16px; cursor: pointer; transition: background 0.15s; }
-  .row:active { background: var(--badge-border); }
+  .av { border-radius: 50%; object-fit: cover; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; flex: none; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+  .row { display: flex; gap: 14px; align-items: center; padding: 14px 18px; cursor: pointer; transition: background 0.2s ease; border-radius: 18px; margin: 2px 8px; }
+  .row:active { background: rgba(255,255,255,0.08); }
   .r1 { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-  .sn { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } b.sn { opacity: 1; }
+  .sn { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; } b.sn { opacity: 1; font-weight: 700; font-size: 15px; }
   small { opacity: 0.65; font-size: 12px; }
-  .bd { background: var(--ac); color: #fff; border-radius: 999px; font-style: normal; font-size: 12px; padding: 2px 8px; font-weight: 600; }
+  .bd { background: var(--ac); color: #fff; border-radius: 999px; font-style: normal; font-size: 11px; padding: 3px 9px; font-weight: 700; }
 
-  .inp { width: 100%; background: var(--in); border: 1.5px solid var(--badge-border); border-radius: 16px; padding: 12px 16px; color: inherit; font: inherit; outline: 0; margin: 6px 0; transition: border-color .2s; }
-  .inp:focus { border-color: #C54FDA; }
+  .inp { width: 100%; background: var(--in); border: 1.5px solid var(--badge-border); border-radius: 18px; padding: 14px 18px; color: inherit; font: inherit; outline: 0; margin: 6px 0; transition: all 0.2s; }
+  .inp:focus { border-color: #c54fda; box-shadow: 0 0 15px rgba(197,79,218,0.25); }
   .fi { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: inherit; font: inherit; text-align: right; }
   
-  .btn { width: 100%; border: 0; border-radius: 999px; padding: 14px; color: #fff; background: var(--ac); font-weight: 700; font-size: 16px; cursor: pointer; margin-top: 10px; box-shadow: 0 8px 22px rgba(197,79,218,0.4); transition: transform 0.15s; }
+  .btn { width: 100%; border: 0; border-radius: 999px; padding: 16px; color: #fff; background: var(--ac); font-weight: 800; font-size: 16px; letter-spacing: 0.5px; cursor: pointer; margin-top: 12px; box-shadow: 0 8px 24px rgba(197,79,218,0.45); transition: transform 0.15s, box-shadow 0.15s; }
   .btn:active { transform: scale(0.97); }
 
-  /* Chat Messages Flex Fix */
-  #ms { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 12px; scroll-behavior: smooth; overscroll-behavior: contain; }
-  .m { max-width: 82%; padding: 10px 14px; border-radius: 18px; margin: 4px 0; font-size: var(--fs); word-break: break-word; border: 1px solid var(--badge-border); animation: popIn .15s ease-out; position: relative; }
+  /* Modern Chat Interface */
+  #ms { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 14px; scroll-behavior: smooth; overscroll-behavior: contain; }
+  .m { max-width: 82%; padding: 12px 16px; border-radius: 22px; margin: 5px 0; font-size: var(--fs); word-break: break-word; border: 1px solid var(--badge-border); animation: appPop .2s ease-out; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
   .me { align-self: flex-end; background: var(--me); border-bottom-right-radius: 4px; color: #fff; }
   .th { align-self: flex-start; background: var(--badge-bg); border-bottom-left-radius: 4px; }
   .mt { display: flex; gap: 4px; justify-content: flex-end; align-items: center; margin-top: 4px; font-size: 11px; opacity: 0.75; }
   .mt .i { width: 13px; height: 13px; }
   .em { width: 1.3em; height: 1.3em; vertical-align: -0.3em; }
-  .big { width: 52px; height: 52px; animation: pulseLogo 2s ease-in-out infinite; }
-  .md { max-width: 100%; max-height: 280px; border-radius: 12px; display: block; margin-top: 6px; object-fit: cover; }
-  .rp { border-left: 3px solid #C54FDA; padding-left: 8px; margin-bottom: 6px; font-size: 13px; opacity: 0.9; background: rgba(0,0,0,0.15); border-radius: 0 8px 8px 0; padding-top: 4px; padding-bottom: 4px; }
+  .big { width: 56px; height: 56px; animation: pulseGlow 2s ease-in-out infinite; }
+  .md { max-width: 100%; max-height: 280px; border-radius: 16px; display: block; margin-top: 6px; object-fit: cover; }
+  .rp { border-left: 3.5px solid #c54fda; padding-left: 10px; margin-bottom: 6px; font-size: 13px; opacity: 0.9; background: rgba(0,0,0,0.2); border-radius: 0 10px 10px 0; padding-top: 4px; padding-bottom: 4px; }
   .rx { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
-  .rx span { background: var(--badge-border); border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 3px; }
-  .ul { color: #6ab3f3; cursor: pointer; text-decoration: underline; }
+  .rx span { background: var(--badge-border); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+  .ul { color: #818cf8; cursor: pointer; text-decoration: underline; font-weight: 600; }
 
-  .cmp { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px; background: var(--badge-bg); border-top: 1px solid var(--badge-border); flex-shrink: 0; }
-  .cmp textarea { flex: 1; max-height: 120px; min-height: 42px; resize: none; border-radius: 21px; padding: 10px 16px; background: var(--in); border: 1.5px solid var(--badge-border); color: inherit; font: inherit; outline: 0; line-height: 1.3; }
-  .cmp textarea:focus { border-color: #C54FDA; }
+  .cmp { display: flex; gap: 10px; align-items: flex-end; padding: 12px 14px; background: var(--badge-bg); border-top: 1px solid var(--badge-border); flex-shrink: 0; }
+  .cmp textarea { flex: 1; max-height: 120px; min-height: 44px; resize: none; border-radius: 22px; padding: 12px 18px; background: var(--in); border: 1.5px solid var(--badge-border); color: inherit; font: inherit; outline: 0; line-height: 1.35; }
+  .cmp textarea:focus { border-color: #c54fda; }
 
-  .ov { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(6px); pointer-events: auto; }
-  .bx { width: 100%; max-width: 340px; padding: 22px; background: var(--bg); border-radius: 24px; animation: popIn .2s ease-out; }
-  .bx h3 { margin-bottom: 8px; font-size: 18px; } .bx p { opacity: 0.8; margin-bottom: 12px; font-size: 14px; }
-  .op { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; padding: 12px; font: inherit; border-radius: 12px; cursor: pointer; }
+  .ov { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(8px); pointer-events: auto; }
+  .bx { width: 100%; max-width: 360px; padding: 24px; background: var(--bg); border-radius: 28px; animation: appPop .25s ease-out; border: 1px solid var(--badge-border); }
+  .bx h3 { margin-bottom: 8px; font-size: 20px; font-weight: 800; } .bx p { opacity: 0.8; margin-bottom: 14px; font-size: 14px; }
+  .op { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; padding: 14px; font: inherit; border-radius: 14px; cursor: pointer; font-weight: 600; }
   .op:hover { background: var(--badge-border); }
-  .bt { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-  .bt button { background: none; border: 0; color: #C54FDA; font-weight: 700; padding: 8px 14px; font-size: 15px; cursor: pointer; border-radius: 8px; }
+  .bt { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+  .bt button { background: none; border: 0; color: #c54fda; font-weight: 800; padding: 10px 16px; font-size: 15px; cursor: pointer; border-radius: 12px; }
   .bt .rd { color: #ff5b5b; }
-  .cb { display: flex; gap: 10px; align-items: center; margin: 10px 0; font-size: 14px; cursor: pointer; }
+  .cb { display: flex; gap: 10px; align-items: center; margin: 12px 0; font-size: 14px; cursor: pointer; }
 
-  .sheet { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 12px; background: var(--bg); border-radius: 24px; animation: popIn .2s ease-out; }
-  .it { display: flex; gap: 14px; align-items: center; padding: 12px 16px; border-radius: 14px; cursor: pointer; }
+  .sheet { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 14px; background: var(--bg); border-radius: 28px; animation: slideUp .25s ease-out; border: 1px solid var(--badge-border); }
+  .it { display: flex; gap: 14px; align-items: center; padding: 14px 18px; border-radius: 16px; cursor: pointer; font-weight: 600; }
   .it:hover { background: var(--badge-border); }
   .it.red { color: #ff6b6b; }
-  .rr { display: flex; justify-content: space-around; padding: 8px 0; } .rr img { width: 36px; cursor: pointer; transition: transform .15s; }
-  .rr img:hover { transform: scale(1.2); }
+  .rr { display: flex; justify-content: space-around; padding: 10px 0; } .rr img { width: 40px; cursor: pointer; transition: transform .15s; }
+  .rr img:hover { transform: scale(1.25); }
 
-  .dw { width: 85%; max-width: 320px; height: 100%; background: var(--bg); overflow-y: auto; padding-top: env(safe-area-inset-top); border-right: 1px solid var(--badge-border); box-shadow: var(--shadow); }
-  hr { border: 0; border-top: 1px solid var(--badge-border); margin: 8px 0; }
-  .sec { margin: 12px 8px; border-radius: 20px; overflow: hidden; }
-  .wps { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; }
-  .wps div { width: 56px; height: 80px; border-radius: 14px; border: 2px solid var(--badge-border); cursor: pointer; }
+  .dw { width: 85%; max-width: 330px; height: 100%; background: var(--bg); overflow-y: auto; padding-top: env(safe-area-inset-top); border-right: 1px solid var(--badge-border); box-shadow: var(--shadow); }
+  hr { border: 0; border-top: 1px solid var(--badge-border); margin: 10px 0; }
+  .sec { margin: 12px 8px; border-radius: 24px; overflow: hidden; }
+  .wps { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px; }
+  .wps div { width: 58px; height: 84px; border-radius: 16px; border: 2px solid var(--badge-border); cursor: pointer; }
 </style>
 </head>
 <body>
@@ -209,7 +212,7 @@ document.addEventListener('click',e=>{
   const f=Act[el.dataset.a];f&&f(el,e)
 });
 
-/* ---------- Notification Center & System Trigger Fix ---------- */
+/* ---------- Native System Notifications Fix ---------- */
 function showSystemNotification(title, body, icon) {
   if (!("Notification" in window)) return;
   if (Notification.permission === "granted") {
@@ -225,10 +228,10 @@ function showSystemNotification(title, body, icon) {
 }
 
 /* ---------- Auth Screen ---------- */
-const fld=(i,ph,id,ty)=>`<label class="badge row" style="padding:8px 12px;margin:8px 0;border-radius:16px">${tl(i)}<input id="${id}" type="${ty||'text'}" placeholder="${ph}" class="fi"></label>`;
+const fld=(i,ph,id,ty)=>`<label class="badge row" style="padding:8px 12px;margin:8px 0;border-radius:18px">${tl(i)}<input id="${id}" type="${ty||'text'}" placeholder="${ph}" class="fi"></label>`;
 function authScr(add){
   let reg=false;
-  const draw=()=>{$('#app').innerHTML=`<div class="scr" style="overflow:auto;align-items:center;padding:24px 16px;gap:12px">${add?`<button class="ib badge" data-a="authx" style="align-self:flex-start">${ic('back')}</button>`:''}<div class="badge pill fit" style="padding:10px 26px;font-size:24px;font-weight:800">MS CHAT</div><div class="badge" style="width:110px;height:110px;border-radius:50%;padding:10px;display:flex;align-items:center;justify-content:center"><img src="https://magic-scripts.vercel.app/logo.svg" style="width:100%;height:100%;border-radius:50%;animation:pulseLogo 2s infinite"></div><div style="width:100%;max-width:380px">${reg?fld('person','Name','an')+fld('person','Username (optional)','au'):''}${fld('mail','Email','ae','email')}${fld('lock','Password','ap','password')}<button class="btn" id="go">${reg?'Create account':'Login'}</button><p id="sw" style="text-align:center;margin-top:16px;color:var(--soft);cursor:pointer;font-weight:600">${reg?'Have an account? Login':'New here? Register'}</p></div></div>`;
+  const draw=()=>{$('#app').innerHTML=`<div class="scr" style="overflow:auto;align-items:center;padding:24px 16px;gap:14px">${add?`<button class="ib badge" data-a="authx" style="align-self:flex-start">${ic('back')}</button>`:''}<div class="badge pill fit" style="padding:12px 32px;font-size:26px;font-weight:800;letter-spacing:1px">MS CHAT</div><div class="badge" style="width:120px;height:120px;border-radius:50%;padding:12px;display:flex;align-items:center;justify-content:center"><img src="https://magic-scripts.vercel.app/logo.svg" style="width:100%;height:100%;border-radius:50%;animation:pulseGlow 2.4s infinite ease-in-out"></div><div style="width:100%;max-width:380px">${reg?fld('person','Name','an')+fld('person','Username (optional)','au'):''}${fld('mail','Email','ae','email')}${fld('lock','Password','ap','password')}<button class="btn" id="go">${reg?'Create Account':'Login'}</button><p id="sw" style="text-align:center;margin-top:18px;color:var(--soft);cursor:pointer;font-weight:600">${reg?'Have an account? Login':'New here? Register'}</p></div></div>`;
   $('#sw').onclick=()=>{reg=!reg;draw()};
   $('#go').onclick=async()=>{
     const b={email:$('#ae').value,password:$('#ap').value};
@@ -244,7 +247,7 @@ function authScr(add){
 }
 Act.authx=()=>boot();
 
-/* ---------- Boot / Chat List ---------- */
+/* ---------- Boot & List ---------- */
 async function boot(){
   document.documentElement.dataset.t=S.st.t;
   document.documentElement.style.setProperty('--fs',S.st.fs+'px');
@@ -273,14 +276,14 @@ async function boot(){
 
 async function loadChats(){const j=await api('/chats');if(j.chats){S.ch=j.chats;MSNotify.setBadge(S.ch.reduce((a,c)=>a+c.unread,0));const cc=S.cur&&S.ch.find(x=>x.chat===S.cur.chat);if(cc){S.cur.peer=cc.peer;const s=$('#st');if(s&&!cc.saved)s.textContent=stat(cc.peer)}if(!S.cur)cl()}}
 const prev=m=>!m?'':m.media?`[${m.media.type}] ${m.text||''}`:m.text;
-const row=c=>`<div class="row" data-a="open" data-c="${c.chat}">${av(c.peer,50,c.saved)}<div class="fx"><div class="r1"><b class="sn">${nm(ct(c))}</b><small>${c.last?tm(c.last.ts):''}</small></div><div class="r1"><span class="sn">${rich(prev(c.last))}</span><span style="display:flex;gap:6px;align-items:center">${c.mute?ic('mute'):''}${c.unread?`<i class="bd">${c.unread}</i>`:''}</span></div></div></div>`;
+const row=c=>`<div class="row badge" data-a="open" data-c="${c.chat}">${av(c.peer,52,c.saved)}<div class="fx"><div class="r1"><b class="sn">${nm(ct(c))}</b><small>${c.last?tm(c.last.ts):''}</small></div><div class="r1"><span class="sn">${rich(prev(c.last))}</span><span style="display:flex;gap:6px;align-items:center">${c.mute?ic('mute'):''}${c.unread?`<i class="bd">${c.unread}</i>`:''}</span></div></div></div>`;
 
 function list(){
-  $('#app').innerHTML=`<div class="scr"><div class="hd badge" style="border-radius:0 0 20px 20px;margin-bottom:6px"><button class="ib" data-a="drawer">${ic('menu')}</button><b class="ttl fx">MS Chat</b><button class="ib" data-a="gs">${ic('search')}</button></div><div id="sb" hidden style="padding:0 12px"><input id="q" class="inp" placeholder="Search chats and messages" oninput="lsearch(this.value)"></div>${'Notification' in window&&Notification.permission==='default'?`<div class="row badge" data-a="pushon" style="margin:8px 12px;border-radius:16px">${tl('mute')}<div class="fx">Enable notifications</div></div>`:''}<div id="cl" style="overflow-y:auto;flex:1">${S.ch.map(row).join('')}</div></div>`
+  $('#app').innerHTML=`<div class="scr"><div class="hd badge" style="border-radius:0 0 24px 24px;margin-bottom:8px"><button class="ib" data-a="drawer">${ic('menu')}</button><b class="ttl fx">MS Chat</b><button class="ib" data-a="gs">${ic('search')}</button></div><div id="sb" hidden style="padding:0 14px"><input id="q" class="inp" placeholder="Search chats and messages" oninput="lsearch(this.value)"></div>${'Notification' in window&&Notification.permission==='default'?`<div class="row badge" data-a="pushon" style="margin:8px 14px">${tl('mute')}<div class="fx">Enable notifications</div></div>`:''}<div id="cl" style="overflow-y:auto;flex:1;padding:4px 0">${S.ch.map(row).join('')}</div></div>`
 }
 
 let st1;
-function lsearch(v){clearTimeout(st1);st1=setTimeout(async()=>{if(!v.trim())return cl2();const j=await api('/search?q='+E(v));$('#cl').innerHTML=(j.users||[]).map(u=>`<div class="row" data-a="ou" data-u="${esc(u.username)}">${av(u)}<div class="fx"><b>${nm(u.name)}</b><br><small>@${esc(u.username)}</small></div></div>`).join('')+(j.chats||[]).map(x=>{const c=S.ch.find(y=>y.chat===x.chat);return c?`<div class="row" data-a="open" data-c="${x.chat}">${av(c.peer,46,c.saved)}<div class="fx"><b>${nm(ct(c))}</b><div class="sn">${rich(x.snippet)}</div></div></div>`:''}).join('')||'<p style="text-align:center;padding:24px;opacity:.6">No results</p>'},300)}
+function lsearch(v){clearTimeout(st1);st1=setTimeout(async()=>{if(!v.trim())return cl2();const j=await api('/search?q='+E(v));$('#cl').innerHTML=(j.users||[]).map(u=>`<div class="row badge" data-a="ou" data-u="${esc(u.username)}">${av(u)}<div class="fx"><b>${nm(u.name)}</b><br><small>@${esc(u.username)}</small></div></div>`).join('')+(j.chats||[]).map(x=>{const c=S.ch.find(y=>y.chat===x.chat);return c?`<div class="row badge" data-a="open" data-c="${x.chat}">${av(c.peer,46,c.saved)}<div class="fx"><b>${nm(ct(c))}</b><div class="sn">${rich(x.snippet)}</div></div></div>`:''}).join('')||'<p style="text-align:center;padding:24px;opacity:.6">No results</p>'},300)}
 const cl2=()=>{$('#cl').innerHTML=S.ch.map(row).join('')};
 Act.gs=()=>{const s=$('#sb');s.hidden=!s.hidden;if(s.hidden){$('#q').value='';cl2()}else $('#q').focus()};
 Act.pushon=async()=>{await MSNotify.askStorage();if((await MSNotify.permission())==='granted'){await MSNotify.registerDevice();toast('Notifications enabled')}list()};
@@ -300,18 +303,18 @@ async function openC(c,mode,mid){
 
 function drawC(){
   const c=S.cur;
-  $('#cv').innerHTML=`<div class="hd badge" style="border-radius:0"><button class="ib" data-a="back">${ic('back')}</button><div class="row fx" style="padding:0" data-a="prof">${av(c.peer,40,c.saved)}<div class="fx"><b class="sn">${nm(ct(c))}</b><small id="st">${c.saved?'':stat(c.peer)}</small></div></div><button class="ib" data-a="csearch">${ic('search')}</button><button class="ib" data-a="cmenu">${ic('more')}</button></div><div id="sb2" hidden style="padding:0 10px"><input id="cq" class="inp" placeholder="Search in this chat"></div><div id="pn" hidden></div><div id="ms"></div><div id="rb" hidden></div>${c.blocked?`<div style="text-align:center;padding:10px"><button class="btn" data-a="unblock">Unblock User</button><p data-a="addc" style="padding:12px;color:var(--soft);cursor:pointer">${c.cn?'Edit contact':'Add contact'}</p></div>`:`<div class="cmp"><button class="ib" data-a="attach">${ic('clip')}</button><button class="ib" data-a="cam">${ic('cam')}</button><textarea id="inp" rows="1" placeholder="Message"></textarea><button class="tile" id="sbtn" data-a="sendmic">${ic('mic')}</button></div>`}`;
+  $('#cv').innerHTML=`<div class="hd badge" style="border-radius:0"><button class="ib" data-a="back">${ic('back')}</button><div class="row fx" style="padding:0;margin:0" data-a="prof">${av(c.peer,42,c.saved)}<div class="fx"><b class="sn">${nm(ct(c))}</b><small id="st">${c.saved?'':stat(c.peer)}</small></div></div><button class="ib" data-a="csearch">${ic('search')}</button><button class="ib" data-a="cmenu">${ic('more')}</button></div><div id="sb2" hidden style="padding:0 12px"><input id="cq" class="inp" placeholder="Search in this chat"></div><div id="pn" hidden></div><div id="ms"></div><div id="rb" hidden></div>${c.blocked?`<div style="text-align:center;padding:12px"><button class="btn" data-a="unblock">Unblock User</button><p data-a="addc" style="padding:12px;color:var(--soft);cursor:pointer">${c.cn?'Edit contact':'Add contact'}</p></div>`:`<div class="cmp"><button class="ib" data-a="attach">${ic('clip')}</button><button class="ib" data-a="cam">${ic('cam')}</button><textarea id="inp" rows="1" placeholder="Message"></textarea><button class="tile" id="sbtn" data-a="sendmic">${ic('mic')}</button></div>`}`;
   
   const i=$('#inp');
   if(i){
     i.oninput=()=>{$('#sbtn').innerHTML=ic(i.value.trim()?'send':'mic');i.style.height='auto';i.style.height=Math.min(i.scrollHeight,120)+'px'};
     i.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&window.innerWidth>700){e.preventDefault();snd()}}
   }
-  $('#cq').oninput=e=>{clearTimeout(st1);const v=e.target.value;st1=setTimeout(async()=>{if(!v.trim())return drawMs();const j=await api('/search?chat='+E(S.cur.chat)+'&q='+E(v));$('#ms').innerHTML=(j.msgs||[]).map(m=>`<div class="row" data-a="sres" data-i="${m.id}"><div class="fx"><small>${tm(m.ts)}</small><div>${rich(m.text)}</div></div></div>`).join('')||'<p style="margin:auto;opacity:.6">No results</p>'},300)}
+  $('#cq').oninput=e=>{clearTimeout(st1);const v=e.target.value;st1=setTimeout(async()=>{if(!v.trim())return drawMs();const j=await api('/search?chat='+E(S.cur.chat)+'&q='+E(v));$('#ms').innerHTML=(j.msgs||[]).map(m=>`<div class="row badge" data-a="sres" data-i="${m.id}"><div class="fx"><small>${tm(m.ts)}</small><div>${rich(m.text)}</div></div></div>`).join('')||'<p style="margin:auto;opacity:.6">No results</p>'},300)}
 }
 
 async function loadMs(mode,mid){const q='/msgs?chat='+E(S.cur.chat)+(mode==='first'?'&mode=first':mode==='around'?'&around='+mid:'');const j=await api(q);if(!j.msgs)return;S.ms=j.msgs;S.pin0=j.pin;S.pr=j.rd;S.sb=mode!=='first';drawMs();S.sb=0;if(mode==='first')$('#ms').scrollTop=0;if(mode==='around')Act.goto({dataset:{i:mid}})}
-const tick=m=>m.id<=S.pr?`<span style="color:#6cf;display:flex">${ic('ok')}${ic('ok')}</span>`:ic('ok');
+const tick=m=>m.id<=S.pr?`<span style="color:#818cf8;display:flex">${ic('ok')}${ic('ok')}</span>`:ic('ok');
 function media(m){const x=m.media;if(!x)return'';const u=esc(x.url);return x.type==='image'?`<img class="md" src="${u}" data-a="view">`:x.type==='video'?`<video class="md" controls src="${u}"></video>`:x.type==='audio'||x.type==='voice'?`<audio controls src="${u}" style="max-width:100%"></audio>`:`<a href="${u}" target="_blank" style="color:inherit;display:flex;gap:8px;align-items:center">${ic('file')}${esc(x.name||'file')}</a>`}
 function mh(m){const me=m.from===S.me.id,big=!m.media&&m.text&&BIG.test(m.text.trim());const g={};Object.values(m.react||{}).forEach(e=>g[e]=(g[e]||0)+1);
 return `<div class="m ${me?'me':'th'}" id="m${m.id}" data-a="mm" data-i="${m.id}">${m.fwd?`<small>Forwarded from ${nm(m.fwd)}</small><br>`:''}${m.reply?`<div class="rp" data-a="goto" data-i="${m.reply.id}"><b>${nm(m.reply.name)}</b><br>${nm((m.reply.text||'').slice(0,80))}</div>`:''}${media(m)}${big?rich(m.text).replace('class="em"','class="em big"'):`<span>${rich(m.text||'')}</span>`}<div class="mt"><small>${(m.pin||[]).includes(S.me.id)?ic('pin'):''}${m.edited?'edited ':''}${tm(m.ts)}</small>${me?tick(m):''}</div>${Object.keys(g).length?`<div class="rx">${Object.entries(g).map(([e,n])=>`<span data-a="rc" data-i="${m.id}" data-e="${e}"><img class="em" src="${eu(e)}">${n>1?n:''}</span>`).join('')}</div>`:''}</div>`}
@@ -326,7 +329,7 @@ function drawMs(){
   $('#pn').hidden=!p;if(p)$('#pn').innerHTML=`<div class="row badge" data-a="goto" data-i="${p.id}" style="border-radius:0">${ic('pin')}<div class="sn">${rich(p.text||'['+(p.media&&p.media.type)+']')}</div></div>`
 }
 
-Act.goto=el=>{const e=$('#m'+el.dataset.i);if(e){e.scrollIntoView({block:'center'});e.style.outline='2px solid #C54FDA';setTimeout(()=>e.style.outline='',1500)}else loadMs('around',el.dataset.i)};
+Act.goto=el=>{const e=$('#m'+el.dataset.i);if(e){e.scrollIntoView({block:'center'});e.style.outline='2px solid #c54fda';setTimeout(()=>e.style.outline='',1500)}else loadMs('around',el.dataset.i)};
 Act.sres=el=>{$('#sb2').hidden=true;$('#cq').value='';loadMs('around',el.dataset.i)};
 Act.csearch=()=>{const s=$('#sb2');s.hidden=!s.hidden;if(s.hidden){$('#cq').value='';drawMs()}else $('#cq').focus()};
 Act.back=()=>{if(!S.cur)return;S.cur=null;$('#cv').hidden=true;MSNotify.setActiveChat(null);history.replaceState(0,'','/');loadChats().then(list)};
@@ -389,7 +392,7 @@ fl.onchange=async()=>{
 
 Act.attach=()=>{fl.accept='*/*';fl.removeAttribute('capture');fl.click()};
 Act.cam=async()=>{if(!(await MSNotify.askMedia('camera')))return toast('Camera permission needed');fl.accept='image/*';fl.setAttribute('capture','environment');fl.click()};
-Act.view=el=>{const d=$('#dlg');d.innerHTML=`<div class="ov" style="padding:0"><img src="${el.src}" style="max-width:100%;max-height:100%;border-radius:12px"></div>`;d.onclick=()=>d.innerHTML=''};
+Act.view=el=>{const d=$('#dlg');d.innerHTML=`<div class="ov" style="padding:0"><img src="${el.src}" style="max-width:100%;max-height:100%;border-radius:16px"></div>`;d.onclick=()=>d.innerHTML=''};
 Act.cmenu=()=>{const c=S.cur;sheet(it('up','Go to first message','first')+(c.mute?it('mute','Unmute','unm'):it('mute','Mute','mu'))+it('del','Clear chat','clr')+it('del','Delete chat','dch',1))};
 Act.first=()=>loadMs('first');
 Act.unm=async()=>{await api('/chat/mute',{chat:cid(),until:0});S.cur.mute=0;toast('Notifications enabled')};
@@ -408,19 +411,19 @@ Act.addc=async()=>{const c=S.cur,r=await dlg({t:c.cn?'Edit contact':'Add contact
 Act.a2h=()=>{if(S.bip){S.bip.prompt()}else toast('Chrome menu → Add to Home screen')};
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();S.bip=e});
 
-Act.drawer=()=>{$('#dr').innerHTML=`<div class="dw"><div style="padding:16px;display:flex;justify-content:space-between;align-items:center"><img src="/icon-192.png" width="46" style="border-radius:50%"><button class="ib badge" data-a="theme">${ic('sun')}</button></div><div class="row" data-a="mypf">${av(S.me,56)}<div class="fx"><b class="sn">${nm(S.me.name)}</b><br><small>@${esc(S.me.username)}</small></div></div><hr>${S.ac.map((a,i)=>`<div class="row" data-a="acct" data-i="${i}"><span class="av badge" style="width:38px;height:38px;background:#7a2bc4">${esc(Array.from(a.name||'?')[0])}</span><div class="fx sn">${nm(a.name)}</div>${i===S.ai?ic('ok'):''}</div>`).join('')}${S.ac.length<5?rw('add','Add account','','addacc'):''}<hr>${rw('person','My Profile','','mypf')}${rw('bm','Saved Messages','','saved')}${rw('set','Settings','','setg')}${rw('img','Chat Settings','','chs')}${rw('lock','Privacy and Security','','prv')}</div>`;$('#dr').hidden=false};
+Act.drawer=()=>{$('#dr').innerHTML=`<div class="dw"><div style="padding:16px;display:flex;justify-content:space-between;align-items:center"><img src="/icon-192.png" width="46" style="border-radius:50%"><button class="ib badge" data-a="theme">${ic('sun')}</button></div><div class="row badge" data-a="mypf">${av(S.me,56)}<div class="fx"><b class="sn">${nm(S.me.name)}</b><br><small>@${esc(S.me.username)}</small></div></div><hr>${S.ac.map((a,i)=>`<div class="row badge" data-a="acct" data-i="${i}"><span class="av badge" style="width:38px;height:38px;background:#7c3aed">${esc(Array.from(a.name||'?')[0])}</span><div class="fx sn">${nm(a.name)}</div>${i===S.ai?ic('ok'):''}</div>`).join('')}${S.ac.length<5?rw('add','Add account','','addacc'):''}<hr>${rw('person','My Profile','','mypf')}${rw('bm','Saved Messages','','saved')}${rw('set','Settings','','setg')}${rw('img','Chat Settings','','chs')}${rw('lock','Privacy and Security','','prv')}</div>`;$('#dr').hidden=false};
 Act.theme=()=>{S.st.t=S.st.t==='dark'?'light':'dark';document.documentElement.dataset.t=S.st.t;sv()};
 Act.acct=el=>{S.ai=+el.dataset.i;sv();S.ni=1;boot()};
 Act.addacc=()=>authScr(1);
 Act.saved=()=>{$('#pg').hidden=true;openC({chat:'s:'+S.me.id,peer:S.me,cn:'',saved:true,mute:0})};
-Act.mypf=fresh=>{if(fresh===1)Act.pback();const u=S.me;page('My Profile',`<div style="text-align:center;padding:24px">${av(u,110)}<h2 style="margin-top:8px">${nm(u.name)}</h2><small>online</small></div><div style="display:flex;gap:8px"><div class="badge row fx" data-a="sp" style="flex-direction:column;padding:12px;border-radius:16px">${ic('cam')}<small>Set Photo</small></div><div class="badge row fx" data-a="ei" style="flex-direction:column;padding:12px;border-radius:16px">${ic('edit')}<small>Edit Info</small></div><div class="badge row fx" data-a="setg" style="flex-direction:column;padding:12px;border-radius:16px">${ic('set')}<small>Settings</small></div></div><div class="badge sec">${rw('mail',esc(u.email),'Email')}${rw('info',nm(u.bio||'—'),'Bio')}${rw('person','@'+esc(u.username),'Username')}${u.dob?rw('info',esc(u.dob),'Birthday'):''}</div>`,`<button class="ib" data-a="lgp">${ic('more')}</button>`)};
+Act.mypf=fresh=>{if(fresh===1)Act.pback();const u=S.me;page('My Profile',`<div style="text-align:center;padding:24px">${av(u,110)}<h2 style="margin-top:8px">${nm(u.name)}</h2><small>online</small></div><div style="display:flex;gap:10px"><div class="badge row fx" data-a="sp" style="flex-direction:column;padding:14px;border-radius:20px">${ic('cam')}<small>Set Photo</small></div><div class="badge row fx" data-a="ei" style="flex-direction:column;padding:14px;border-radius:20px">${ic('edit')}<small>Edit Info</small></div><div class="badge row fx" data-a="setg" style="flex-direction:column;padding:14px;border-radius:20px">${ic('set')}<small>Settings</small></div></div><div class="badge sec">${rw('mail',esc(u.email),'Email')}${rw('info',nm(u.bio||'—'),'Bio')}${rw('person','@'+esc(u.username),'Username')}${u.dob?rw('info',esc(u.dob),'Birthday'):''}</div>`,`<button class="ib" data-a="lgp">${ic('more')}</button>`)};
 Act.sp=()=>{S.fm='av';fl.accept='image/*';fl.removeAttribute('capture');fl.click()};
 Act.ei=()=>{const u=S.me;page('Edit info',`<input id="en" class="inp" placeholder="Name" value="${esc(u.name)}"><input id="eb" class="inp" placeholder="Bio" value="${esc(u.bio)}" maxlength="120"><input id="eu" class="inp" placeholder="Username" value="${esc(u.username)}"><input id="ed" class="inp" type="date" value="${esc(u.dob)}"><div class="badge sec">${rw('mail','Change email',esc(u.email),'cem')}</div><button class="btn" data-a="esv">Done</button>`)};
 Act.esv=async()=>{const j=await api('/me/update',{name:$('#en').value,bio:$('#eb').value,username:$('#eu').value,dob:$('#ed').value});if(ok(j)){S.me=j.me;toast('Saved');Act.pback()}};
 Act.cem=async()=>{const e=await ask('New email','Email','email');if(!e)return;const p=await ask('Enter your password');if(!p)return;const j=await api('/me/update',{email:e,password:p});if(ok(j)){S.me=j.me;toast('Email changed')}};
 Act.setg=()=>{page('Settings',`<div class="badge sec">${rw('person','Account','Name, bio, username, birthday','ei')}${rw('img','Chat Settings','Text size, wallpapers','chs')}${rw('lock','Privacy and Security','','prv')}${rw('mute','Notifications','Enable push on this device','pushon2')}</div>`,`<button class="ib" data-a="lgp">${ic('more')}</button>`)};
 Act.pushon2=async()=>{await Act.pushon();toast('Notifications: '+Notification.permission)};
-Act.chs=()=>page('Chat Settings',`<div class="badge sec" style="padding:16px"><b>Message text size</b><input type="range" min="12" max="24" value="${S.st.fs}" style="width:100%;margin-top:8px" oninput="S.st.fs=this.value;document.documentElement.style.setProperty('--fs',this.value+'px');sv()"></div><div class="badge sec"><div class="wps">${WP.map((w,i)=>`<div data-a="wpp" data-i="${i}" style="background:${w}"></div>`).join('')}</div>${rw('img','Wallpaper from gallery','','wpg')}${rw('clip','Wallpaper from URL','','wpu')}</div>`);
+Act.chs=()=>page('Chat Settings',`<div class="badge sec" style="padding:18px"><b>Message text size</b><input type="range" min="12" max="24" value="${S.st.fs}" style="width:100%;margin-top:10px" oninput="S.st.fs=this.value;document.documentElement.style.setProperty('--fs',this.value+'px');sv()"></div><div class="badge sec"><div class="wps">${WP.map((w,i)=>`<div data-a="wpp" data-i="${i}" style="background:${w}"></div>`).join('')}</div>${rw('img','Wallpaper from gallery','','wpg')}${rw('clip','Wallpaper from URL','','wpu')}</div>`);
 Act.wpp=el=>{S.st.wp=+el.dataset.i;S.st.wu='';sv();toast('Wallpaper set')};
 Act.wpg=()=>{S.fm='wp';fl.accept='image/*';fl.removeAttribute('capture');fl.click()};
 Act.wpu=async()=>{const u=await ask('Image URL','https://…','url');if(u){S.st.wu=u;sv();toast('Wallpaper set')}};
@@ -429,9 +432,9 @@ Act.ls=async()=>{const j=await api('/me/update',{hideSeen:!S.me.hideSeen});if(ok
 
 async function secFlow(kind,label){const on=kind==='pass'?S.me.pass:S.me.two;if(!on){const v=await ask('New '+label);if(!v)return;if(!ok(await api('/sec/set',{kind,value:v})))return}else{const r=await dlg({t:label,o:['Change','Remove']});if(r.i<0)return;const cur=await ask('Current '+label);if(!cur)return;if(r.i===0){const v=await ask('New '+label);if(!v)return;if(!ok(await api('/sec/set',{kind,value:v,current:cur})))return}else if(!ok(await api('/sec/remove',{kind,value:cur})))return}S.me=(await api('/me')).me;toast('Done')}
 Act.two=()=>secFlow('two','password');Act.pass=()=>secFlow('pass','passcode');
-Act.bls=async()=>{const j=await api('/blocked');page('Blocked users',(j.users||[]).map(u=>`<div class="row" data-a="ubl" data-i="${u.id}">${av(u)}<div class="fx"><b>${nm(u.name)}</b><br><small>Tap to unblock</small></div></div>`).join('')||'<p style="padding:20px;opacity:.6">No blocked users</p>')};
+Act.bls=async()=>{const j=await api('/blocked');page('Blocked users',(j.users||[]).map(u=>`<div class="row badge" data-a="ubl" data-i="${u.id}">${av(u)}<div class="fx"><b>${nm(u.name)}</b><br><small>Tap to unblock</small></div></div>`).join('')||'<p style="padding:20px;opacity:.6">No blocked users</p>')};
 Act.ubl=async el=>{await api('/block',{peer:el.dataset.i,block:false});Act.pback();Act.bls()};
-Act.dv=async()=>{const j=await api('/devices');page('Devices',(j.devices||[]).map(d=>`<div class="row" data-a="tdev" data-i="${d.id}">${tl('dev')}<div class="fx"><div class="sn">${esc(d.ua||'Unknown')}</div><small>${new Date(d.ts).toLocaleString()} ${d.current?'· This device':''}</small></div></div>`).join(''))};
+Act.dv=async()=>{const j=await api('/devices');page('Devices',(j.devices||[]).map(d=>`<div class="row badge" data-a="tdev" data-i="${d.id}">${tl('dev')}<div class="fx"><div class="sn">${esc(d.ua||'Unknown')}</div><small>${new Date(d.ts).toLocaleString()} ${d.current?'· This device':''}</small></div></div>`).join(''))};
 Act.tdev=async el=>{const r=await dlg({t:'Log out this device?',ok:'Log out',red:1});if(r.ok){await api('/devices/logout',{id:el.dataset.i});Act.pback();Act.dv()}};
 Act.lgp=()=>sheet(it('logout','Logout','lgo'));
 Act.lgo=()=>page('Logout',`<div class="badge sec">${rw('del','Delete account permanently','','delacc')}${rw('logout','Logout','','lo')}</div>`);
@@ -440,7 +443,7 @@ function localLogout(){S.ac.splice(S.ai,1);S.ai=0;sv();S.me=null;S.ni=1;$('#pg')
 Act.lo=async()=>{const r=await dlg({t:'Logout?',p:'You will need to login again.',ok:'Logout',red:1});if(r.ok){try{await MSNotify.unregisterDevice()}catch(e){}await api('/auth/logout',{});localLogout()}};
 Act.delacc=async()=>{const j=await api('/account/delete-start',{});if(j.err==='setup2fa'){const r=await dlg({t:'Set up first',p:'Set Two-step verification or passcode before deleting account.',ok:'Set up'});if(r.ok)Act.two();return}if(!ok(j))return;const code=await ask('Email code','6-digit code','tel');if(!code)return;const b={code};if(j.need.two){b.two=await ask('Two-step password');if(!b.two)return}if(j.need.pass){b.pass=await ask('Passcode');if(!b.pass)return}const d=await api('/account/delete-confirm',b);if(ok(d))localLogout()};
 
-/* ---------- Realtime Updates & System Notification Integration ---------- */
+/* ---------- Realtime Polling & System Notifications ---------- */
 async function poll(){
   if(!S.me||!S.ac[S.ai])return;
   const j=await api('/updates?after='+S.v);
